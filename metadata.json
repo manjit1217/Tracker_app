@@ -1,0 +1,6 @@
+{
+  "name": "Delivery & Warranty Tracker",
+  "description": "Real-time e-commerce delivery status tracking, warranty registration, and return request management portal for customers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
