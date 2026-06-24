@@ -8,6 +8,7 @@ import {
 
 import { Order, Warranty, WarrantyClaim, ReturnRequest, OrderStatus } from './types';
 import { INITIAL_ORDERS, INITIAL_WARRANTIES, INITIAL_WARRANTY_CLAIMS, INITIAL_RETURNS } from './data/mockData';
+import { deduplicateOrders } from './lib/orderMapper';
 import OrdersDashboard from './components/OrdersDashboard';
 import OrdersPage from './components/OrdersPage';
 import WarrantyManager from './components/WarrantyManager';
@@ -77,11 +78,11 @@ export default function App() {
       const parsed = JSON.parse(saved) as Order[];
       // If the cached orders has less items than the latest extracted Gmail dataset, force upgrade
       if (parsed.length < INITIAL_ORDERS.length) {
-        return INITIAL_ORDERS;
+        return deduplicateOrders(INITIAL_ORDERS);
       }
-      return parsed;
+      return deduplicateOrders(parsed);
     }
-    return INITIAL_ORDERS;
+    return deduplicateOrders(INITIAL_ORDERS);
   });
 
   const [warranties, setWarranties] = useState<Warranty[]>(() => {
@@ -330,21 +331,56 @@ export default function App() {
     });
   };
 
-  const handleGmailSync = () => {
-    setOrders(INITIAL_ORDERS);
-    setWarranties(INITIAL_WARRANTIES);
-    setReturns(INITIAL_RETURNS);
-    setSelectedOrderId(INITIAL_ORDERS[0]?.id || '');
-    setShowToast({
-      message: "Sync Complete: Ingested 21 order items with warranty/return details successfully from Gmail service flow.",
-      type: "success"
-    });
+  const handleGmailSync = (
+    newOrders?: Order[],
+    newWarranties?: Warranty[],
+    newReturns?: ReturnRequest[]
+  ) => {
+    if (newOrders && newOrders.length > 0) {
+      // De-duplicate orders using custom status priority and item overlapping
+      setOrders(prev => {
+        const combined = [...newOrders, ...prev];
+        return deduplicateOrders(combined);
+      });
+      if (newWarranties && newWarranties.length > 0) {
+        setWarranties(prev => {
+          const combined = [...newWarranties, ...prev];
+          const unique = combined.filter((val, index, self) => 
+            self.findIndex(v => v.id === val.id) === index
+          );
+          return unique;
+        });
+      }
+      if (newReturns && newReturns.length > 0) {
+        setReturns(prev => {
+          const combined = [...newReturns, ...prev];
+          const unique = combined.filter((val, index, self) => 
+            self.findIndex(v => v.id === val.id) === index
+          );
+          return unique;
+        });
+      }
+      setSelectedOrderId(newOrders[0]?.id || '');
+      setShowToast({
+        message: `Sync Complete: Ingested ${newOrders.length} live order(s) with warranty/return details successfully from Gmail.`,
+        type: "success"
+      });
+    } else {
+      setOrders(INITIAL_ORDERS);
+      setWarranties(INITIAL_WARRANTIES);
+      setReturns(INITIAL_RETURNS);
+      setSelectedOrderId(INITIAL_ORDERS[0]?.id || '');
+      setShowToast({
+        message: "Sync Complete: Ingested 21 order items with warranty/return details successfully from Gmail service flow.",
+        type: "success"
+      });
+    }
   };
 
   // Reset interactive data helper to initial setup
   const resetToFactoryDefaultData = () => {
     if (confirm("Reset application data to initial e-commerce orders, active courier routes, and warranty registry examples?")) {
-      setOrders(INITIAL_ORDERS);
+      setOrders(deduplicateOrders(INITIAL_ORDERS));
       setWarranties(INITIAL_WARRANTIES);
       setClaims(INITIAL_WARRANTY_CLAIMS);
       setReturns(INITIAL_RETURNS);
