@@ -8,7 +8,7 @@ it('groups lifecycle emails with the same exact Amazon order ID',()=>{const r=co
 it('keeps separate purchases of the same product separate',()=>{const r=correlateGmailOrderEvents([event('m1','407-1234567-1234567','Wireless Keyboard'),event('m2','407-7654321-7654321','Wireless Keyboard')]);assert.equal(r.length,2);});
 it('does not merge messages without a stable order ID',()=>{const r=correlateGmailOrderEvents([event('m1',null,'Wireless Keyboard'),event('m2',null,'Wireless Keyboard')]);assert.equal(r.length,2);});
 it('drops duplicate Gmail message IDs',()=>{const r=correlateGmailOrderEvents([event('m1','407-1234567-1234567','Wireless Keyboard'),event('m1','407-1234567-1234567','Wireless Keyboard','Delivered')]);assert.equal(r.length,1);assert.equal(r[0].status,'Pending');});
-it('does not promote generic subjects to product names',()=>{const r=correlateGmailOrderEvents([event('m1','407-1234567-1234567','WHAT GOT YOU HERE WON’T GET YOU THERE')]);assert.equal(r[0].product_name,'');});
+it('does not promote generic subjects or email copy to product names',()=>{const r=correlateGmailOrderEvents([event('m1','407-1234567-1234567','WHAT GOT YOU HERE WON’T GET YOU THERE'),event('m2','407-2234567-1234567','Hi manjit; Congratulations! You have availed No Cost EMI discount')]);assert.equal(r[0].product_name,'');assert.equal(r[1].product_name,'');});
 });
 
 it('preserves delivery and return evidence when a later refund event becomes canonical',()=>{

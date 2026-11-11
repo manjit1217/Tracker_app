@@ -2,6 +2,7 @@ import { GmailOrderRaw } from '../data/gmailOrders';
 import { getWebProductUrl, extractProductUrlFromHtml } from './productUrl';
 import { extractAmazonEmail } from './amazonExtractor';
 import { extractFlipkartOrder } from './flipkartExtractor';
+import { isPlausibleProductName } from './productNameValidation';
 
 interface GmailMessageSummary {
   id: string;
@@ -471,6 +472,9 @@ export const fetchGmailOrders = async (
       let returnWindowDays: number | null = deliveryEvidence.returnWindowDays;
       const returnByDate: string | null = deliveryEvidence.returnByDate;
       const returnDaysLeft: number | null = null;
+
+      // Reject greetings, promotional copy and lifecycle email text before persisting.
+      productName = productName.split(';').map(name => name.trim()).filter(isPlausibleProductName).join('; ');
 
       // Warranty calculation
       let warrantyMonths: number | null = null;

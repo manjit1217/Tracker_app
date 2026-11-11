@@ -1,3 +1,4 @@
+import { isPlausibleProductName } from './productNameValidation';
 export interface AmazonOrderExtraction {
   orderId: string;
   productNames: string[];
@@ -50,7 +51,7 @@ function extractPlainTextOrders(plainText: string): AmazonOrderExtraction[] {
     const start = (match.index || 0) + match[0].length;
     const end = index + 1 < matches.length ? (matches[index + 1].index || plainText.length) : plainText.length;
     const section = plainText.slice(start, end);
-    const candidates = section.split(/\r?\n|\s{2,}/).map(normalizeText).filter(line => line.length >= 8 && line.length <= 220 && !/^(amazon|your order|order details|view order|track package|quantity|total|shipping|delivery|payment)/i.test(line) && !/(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(line));
+    const candidates = section.split(/\r?\n|\s{2,}/).map(normalizeText).filter(line => isPlausibleProductName(line) && !/^(amazon|your order|order details|view order|track package|quantity|total|shipping|delivery|payment)/i.test(line) && !/(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(line));
     const total = section.match(/(?:order total|grand total|total)\s*[:：]?\s*(?:₹|Rs\.?|INR)?\s*([\d,]+(?:\.\d{1,2})?)/i);
     return { orderId: match[0], productNames: unique(candidates).slice(0, 10), productUrls: [], productImageUrls: [], itemTotal: money(section), orderTotal: total ? '₹' + total[1].replace(/,/g, '') : null };
   });
@@ -77,7 +78,7 @@ export function extractAmazonEmail(html: string, plainText = ''): AmazonEmailExt
       const alt = tag.match(/\balt=["']([^"']+)["']/i)?.[1] || '';
       const src = tag.match(/\b(?:src|data-src)=["']([^"']+)["']/i)?.[1] || '';
       const name = normalizeText(alt);
-      if (name.length >= 8 && !/^(amazon|your order|view order)$/i.test(name)) names.push(name);
+      if (isPlausibleProductName(name) && !/^(amazon|your order|view order)$/i.test(name)) names.push(name);
       if (/^https?:\/\//i.test(src)) images.push(src);
     }
 
