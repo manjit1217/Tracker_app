@@ -38,6 +38,58 @@ describe('Amazon email field extraction', () => {
     assert.equal(result.orders[1].orderId, '404-2453989-1047536');
     assert.equal(result.orders[1].orderTotal, '₹579');
   });
+
+  it('parses Amazon digest emails with three separate orders and wrapped product titles', () => {
+    const plain = `
+Order #
+407-9397036-3981923
+
+* ZEVORA Unisex Denim Adjustable Baseball Cap for Men & Women | Stylish Free Size Summer Sports, Gym, Travel & Casual Cap (Pink)
+  Quantity: 1
+  389 INR
+
+Total
+390.8 INR
+
+Order #
+407-0004620-4967568
+
+* Destinio Poncho for Men, Poncho for Women-Thick Waterproof PVC, Rain Coat,
+  Reusable - Transparent Pocket Raincoat with Hood, Full Cover for Bag in
+  Travel, Trekking, Bike Riders (Natural -Knee Length)
+  Quantity: 1
+  399 INR
+
+Total
+400.9 INR
+
+Order #
+407-2913121-6331562
+
+* Billebon Premium Neck Pillow for Travelling Airplane Travel Pillow Comfortable Head Rest Neck Holder Pillow (Navy Blue with Eye Mask)
+  Quantity: 1
+  279 INR
+
+Total
+280.3 INR
+`;
+    const result = extractAmazonEmail('', plain);
+    assert.equal(result.orders.length, 3);
+    assert.deepEqual(result.orders.map(order => order.orderId), [
+      '407-9397036-3981923',
+      '407-0004620-4967568',
+      '407-2913121-6331562',
+    ]);
+    assert.match(result.orders[0].productNames[0], /ZEVORA Unisex Denim Adjustable Baseball Cap/);
+    assert.equal(result.orders[0].itemTotal, '₹389');
+    assert.equal(result.orders[0].orderTotal, '₹390.8');
+    assert.match(result.orders[1].productNames[0], /Destinio Poncho.*Natural -Knee Length/);
+    assert.equal(result.orders[1].itemTotal, '₹399');
+    assert.equal(result.orders[1].orderTotal, '₹400.9');
+    assert.match(result.orders[2].productNames[0], /Billebon Premium Neck Pillow/);
+    assert.equal(result.orders[2].itemTotal, '₹279');
+    assert.equal(result.orders[2].orderTotal, '₹280.3');
+  });
 });
 
 describe('Amazon delivery and return evidence', () => {
