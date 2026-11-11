@@ -17,6 +17,8 @@ export interface GmailOrderRaw {
   product_image_url?: string | null;
   product_url: string;
   delivery_date: string;
+  expected_delivery_date?: string | null;
+  return_policy_text?: string | null;
   invoice_url: string | null;
   email_subject: string;
   email_received_at?: string | null;
