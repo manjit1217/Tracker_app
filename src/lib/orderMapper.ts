@@ -1,6 +1,7 @@
 import { Order, Warranty, ReturnRequest, OrderStatus } from '../types';
 import { GmailOrderRaw } from '../data/gmailOrders';
 import { parsePrice, getProductEmoji } from '../data/mockData';
+import { getWebProductUrl } from './productUrl';
 
 const parseDateSafe = (dateStr: string): Date => {
   const d = new Date(dateStr);
@@ -234,6 +235,7 @@ export const mapGmailRawToDomain = (
       shippingAddress: 'Home Delivery (Synchronized with Gmail User Profile)',
       estimatedArrival: raw.delivery_date,
       courierName: raw.platform === 'Amazon' ? 'Amazon Logistics' : 
+                   raw.platform === 'Flipkart' ? 'Ekart Logistics' :
                    raw.platform === 'Myntra' ? 'Ecom Express' : 
                    raw.platform === 'AJIO' ? 'Bluedart Limited' : 'Delhivery Node',
       courierPhone: `+91 91522 ${Math.floor(10000 + Math.random() * 90000)}`,
@@ -249,7 +251,7 @@ export const mapGmailRawToDomain = (
       warrantyExpiryDate: raw.warranty_expiry,
       warrantyStatus: raw.warranty_months ? 'active' : 'none',
       serialNumber: raw.warranty_months ? `W-${raw.gmail_message_id.slice(-8).toUpperCase()}` : null,
-      productUrl: raw.product_url || null,
+      productUrl: getWebProductUrl(raw.platform, items[0]?.name || raw.product_name, raw.product_url, raw.order_id),
       invoiceUrl: raw.invoice_url || null,
       // Simple coordinate helpers for the delivery map simulation
       courierX: 100,
@@ -387,5 +389,8 @@ export const deduplicateOrders = (orders: Order[]): Order[] => {
     }
   });
 
-  return merged;
+  return merged.map(o => ({
+    ...o,
+    productUrl: getWebProductUrl(o.platform, o.items[0]?.name, o.productUrl, o.trackingNumber)
+  }));
 };

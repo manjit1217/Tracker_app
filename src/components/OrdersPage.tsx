@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Search, Filter, Plus, Calendar, Shield, ArrowLeftRight, Check, CheckCircle2, 
+  Search, Filter, Plus, Calendar, Shield, ArrowLeftRight, ArrowLeft, Check, CheckCircle2, 
   MapPin, Clock, DollarSign, ArrowUpRight, ExternalLink, FileText, Edit, Trash2, 
   X, Info, Upload, Key, User, FileClock, ChevronDown, MessageSquare, Package, Eye
 } from 'lucide-react';
 import { Order, OrderStatus, OrderItem, Warranty, ReturnRequest } from '../types';
 import { PlatformBadge } from '../App';
 import { getProductEmoji } from '../data/mockData';
+import { getWebProductUrl } from '../lib/productUrl';
 
 interface OrdersPageProps {
   orders: Order[];
@@ -31,6 +32,15 @@ export default function OrdersPage({
   const [selPlatform, setSelPlatform] = useState('All');
   const [selStatus, setSelStatus] = useState('All');
   const [sortBy, setSortBy] = useState('newest'); // 'newest' | 'oldest' | 'price_high' | 'price_low'
+
+  // On mobile screens, toggle between list view and selected order detail view
+  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
+
+  useEffect(() => {
+    if (selectedOrderId) {
+      setMobileView('detail');
+    }
+  }, [selectedOrderId]);
 
   // Manual Add state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -153,7 +163,7 @@ export default function OrdersPage({
       warrantyExpiryDate: calculatedExpiryStr,
       warrantyStatus: computedWarrantyStatus,
       serialNumber: cleanMonths > 0 ? `SN-MAN-${orderId.slice(-4).toUpperCase()}` : null,
-      productUrl: newProductUrl.trim() || `https://www.google.com/search?q=${encodeURIComponent(newItemName)}`,
+      productUrl: getWebProductUrl(newBrand, newItemName, newProductUrl.trim()),
       invoiceUrl: newInvoiceUrl.trim() || null,
       notes: newNotes.trim()
     };
@@ -397,10 +407,10 @@ export default function OrdersPage({
               <label className="font-bold text-slate-700 font-mono text-[10px] uppercase">Product Page Link (Optional)</label>
               <input 
                 type="url" 
-                placeholder="e.g. https://www.amazon.in/dp/B08YT"
+                placeholder={newBrand === 'Flipkart' ? 'e.g. https://www.flipkart.com/... (auto-generated if empty)' : newBrand === 'Amazon' ? 'e.g. https://www.amazon.in/dp/... (auto-generated if empty)' : 'e.g. Product web link (auto-generated if empty)'}
                 value={newProductUrl} 
                 onChange={(e) => setNewProductUrl(e.target.value)}
-                className="w-full bg-white border border-slate-205 rounded-xl py-2 px-3 focus:outline-hidden"
+                className="w-full bg-white border border-slate-205 rounded-xl py-2 px-3 focus:outline-hidden text-xs"
               />
             </div>
 
@@ -464,14 +474,14 @@ export default function OrdersPage({
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-3 md:flex md:flex-wrap items-center gap-3 w-full md:w-auto">
           
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 font-mono text-[10px] uppercase">Platform:</span>
+          <div className="flex items-center justify-between sm:justify-start gap-1.5 w-full sm:w-auto">
+            <span className="text-slate-400 font-mono text-[10px] uppercase shrink-0">Platform:</span>
             <select
               value={selPlatform}
               onChange={(e) => setSelPlatform(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 focus:outline-hidden"
+              className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 focus:outline-hidden w-full sm:w-auto text-xs font-medium"
             >
               {platformsList.map(p => (
                 <option key={p} value={p}>{p}</option>
@@ -479,12 +489,12 @@ export default function OrdersPage({
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 font-mono text-[10px] uppercase">Status:</span>
+          <div className="flex items-center justify-between sm:justify-start gap-1.5 w-full sm:w-auto">
+            <span className="text-slate-400 font-mono text-[10px] uppercase shrink-0">Status:</span>
             <select
               value={selStatus}
               onChange={(e) => setSelStatus(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 focus:outline-hidden"
+              className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 focus:outline-hidden w-full sm:w-auto text-xs font-medium"
             >
               <option value="All">All</option>
               <option value="Ordered">Ordered (Processing)</option>
@@ -494,12 +504,12 @@ export default function OrdersPage({
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 font-mono text-[10px] uppercase">Sort:</span>
+          <div className="flex items-center justify-between sm:justify-start gap-1.5 w-full sm:w-auto">
+            <span className="text-slate-400 font-mono text-[10px] uppercase shrink-0">Sort:</span>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 focus:outline-hidden"
+              className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 focus:outline-hidden w-full sm:w-auto text-xs font-medium"
             >
               <option value="newest">Newest First</option>
               <option value="oldest">Oldest First</option>
@@ -516,7 +526,7 @@ export default function OrdersPage({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* LEFT COLUMN: LISTING */}
-        <div className="lg:col-span-6 space-y-3">
+        <div className={`lg:col-span-6 space-y-3 ${mobileView === 'detail' ? 'hidden lg:block' : 'block'}`}>
           {filteredOrders.length === 0 ? (
             <div className="bg-white border border-slate-200 p-12 text-center rounded-2xl flex flex-col items-center justify-center">
               <Package className="w-10 h-10 text-slate-300 mb-2" />
@@ -535,7 +545,10 @@ export default function OrdersPage({
               return (
                 <div 
                   key={order.id}
-                  onClick={() => onSelectOrderId(order.id)}
+                  onClick={() => {
+                    onSelectOrderId(order.id);
+                    setMobileView('detail');
+                  }}
                   className={`border rounded-xl p-4 transition-all duration-300 text-left cursor-pointer relative overflow-hidden group ${
                     representsSelected 
                       ? 'bg-blue-50/20 border-blue-600 shadow-md ring-1 ring-blue-500/10' 
@@ -612,7 +625,16 @@ export default function OrdersPage({
         </div>
 
         {/* RIGHT COLUMN: DETAILED DRAWERS */}
-        <div className="lg:col-span-6">
+        <div className={`lg:col-span-6 ${mobileView === 'list' ? 'hidden lg:block' : 'block'}`}>
+          {/* Back button for mobile view */}
+          <button
+            onClick={() => setMobileView('list')}
+            className="lg:hidden flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-4 py-3 rounded-xl transition mb-4 shadow-2xs w-full justify-center border border-slate-200/60 font-mono uppercase tracking-wider"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-500" />
+            <span>Back to Orders List</span>
+          </button>
+
           {selectedOrder ? (
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-6 text-left anim-fade relative">
               
@@ -635,47 +657,75 @@ export default function OrdersPage({
                 </div>
               </div>
 
-              {/* PRODUCT IMAGE & INFO DETAILS */}
-              <div className="flex items-start gap-4">
-                <span className="relative shrink-0 flex items-center justify-center leading-none select-none" id="detail-product-emoji">
-                  {selectedOrder?.items[0]?.imageUrl ? (
-                    <img
-                      src={selectedOrder.items[0].imageUrl}
-                      alt={selectedOrder.items[0].name}
-                      referrerPolicy="no-referrer"
-                      className="w-16 h-16 object-cover rounded-xl border border-slate-150 shadow-2xs"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                        const fallbackIcon = e.currentTarget.parentElement?.querySelector('.fallback-emoji');
-                        if (fallbackIcon) {
-                          fallbackIcon.classList.remove('hidden');
-                        }
-                      }}
-                    />
-                  ) : null}
-                  <span className={`text-4xl p-2.5 bg-slate-50 border border-slate-100 rounded-xl fallback-emoji ${selectedOrder?.items[0]?.imageUrl ? 'hidden' : ''}`}>
-                    {getProductEmoji(selectedOrder?.items[0]?.name || '')}
-                  </span>
-                </span>
-                <div className="flex-1">
-                  <h4 className="text-xs font-bold text-slate-900 leading-snug">{selectedOrder.items[0]?.name || 'Unknown Item'}</h4>
-                  <p className="text-[10px] text-slate-400 font-mono mt-1 uppercase">
-                    Category: <strong className="text-slate-600 font-bold">{selectedOrder.category || 'Electronics'}</strong> • QTY: 1
-                  </p>
+              {/* PRODUCT IMAGES & INFO DETAILS */}
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">Order Items</h4>
+                {selectedOrder.items.map((item, idx) => {
+                  const itemProductUrl = getWebProductUrl(
+                    selectedOrder.platform,
+                    item.name,
+                    idx === 0 ? selectedOrder.productUrl : null,
+                    selectedOrder.trackingNumber
+                  );
                   
-                  {selectedOrder.productUrl && (
-                    <a 
-                      href={selectedOrder.productUrl} 
-                      target="_blank" 
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-550 hover:underline mt-1.5"
-                    >
-                      <span>Web Product URL</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
-
-                </div>
+                  return (
+                    <div key={item.id || idx} className="flex items-start gap-4 p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition">
+                      <span className="relative shrink-0 flex items-center justify-center leading-none select-none">
+                        {item.imageUrl ? (
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            referrerPolicy="no-referrer"
+                            className="w-14 h-14 object-cover rounded-lg border border-slate-150 shadow-2xs"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              const fallbackIcon = e.currentTarget.parentElement?.querySelector('.fallback-emoji');
+                              if (fallbackIcon) {
+                                fallbackIcon.classList.remove('hidden');
+                              }
+                            }}
+                          />
+                        ) : null}
+                        <span className={`text-3xl p-2 bg-slate-50 border border-slate-100 rounded-lg fallback-emoji ${item.imageUrl ? 'hidden' : ''}`}>
+                          {getProductEmoji(item.name || '')}
+                        </span>
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-bold text-slate-900 leading-snug break-words">{item.name || 'Unknown Item'}</h4>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                          <span className="text-[10px] text-slate-400 font-mono uppercase">
+                            QTY: <strong className="text-slate-600 font-bold">{item.quantity || 1}</strong>
+                          </span>
+                          <span className="text-slate-300">•</span>
+                          <span className="text-[10px] text-slate-400 font-mono uppercase">
+                            Price: <strong className="text-slate-600 font-bold">₹{(item.price || 0).toLocaleString('en-IN')}</strong>
+                          </span>
+                          {selectedOrder.category && (
+                            <>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-[10px] text-slate-400 font-mono uppercase">
+                                Category: <strong className="text-slate-600 font-bold">{selectedOrder.category}</strong>
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        
+                        {itemProductUrl && (
+                          <a 
+                            href={itemProductUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline mt-1.5 transition"
+                            title={`View on ${selectedOrder.platform || 'Store'}`}
+                          >
+                            <span>Web Product URL</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* RETURN DATE AND MANAGE RETURN DETAILS CARD */}

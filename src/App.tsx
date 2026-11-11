@@ -3,7 +3,8 @@ import {
   Package, Truck, Calendar, DollarSign, Search, Shield, ShieldAlert, 
   ArrowLeftRight, CheckCircle2, MapPin, User, Mail, FileText, 
   Warehouse, ChevronRight, PlusCircle, AlertCircle, Phone, Clock, 
-  ArrowRight, Inbox, RefreshCw, Sparkles, AlertTriangle, LayoutDashboard
+  ArrowRight, Inbox, RefreshCw, Sparkles, AlertTriangle, LayoutDashboard,
+  X, Info
 } from 'lucide-react';
 
 import { Order, Warranty, WarrantyClaim, ReturnRequest, OrderStatus } from './types';
@@ -80,6 +81,13 @@ export default function App() {
       if (parsed.length < INITIAL_ORDERS.length) {
         return deduplicateOrders(INITIAL_ORDERS);
       }
+      // Ensure newly added orders (such as CROCS Unisex Clogs from Flipkart) are seamlessly merged
+      const missingInitial = INITIAL_ORDERS.filter(io => 
+        !parsed.some(po => po.id === io.id || po.trackingNumber === io.trackingNumber)
+      );
+      if (missingInitial.length > 0) {
+        return deduplicateOrders([...parsed, ...missingInitial]);
+      }
       return deduplicateOrders(parsed);
     }
     return deduplicateOrders(INITIAL_ORDERS);
@@ -122,6 +130,19 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSimulatingId, setIsSimulatingId] = useState<string | null>(null);
   const [showToast, setShowToast] = useState<{message: string, type: 'success' | 'info'} | null>(null);
+  const [showWelcomeToast, setShowWelcomeToast] = useState(false);
+
+  useEffect(() => {
+    const isDismissed = localStorage.getItem('primetrack_welcome_toast_dismissed');
+    if (!isDismissed) {
+      setShowWelcomeToast(true);
+    }
+  }, []);
+
+  const handleDismissWelcome = () => {
+    localStorage.setItem('primetrack_welcome_toast_dismissed', 'true');
+    setShowWelcomeToast(false);
+  };
 
   // Sync to localStorage
   useEffect(() => {
@@ -393,6 +414,42 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans" id="applet-viewport">
       
+      {/* Top Welcome / Educational Toast Popup */}
+      {showWelcomeToast && (
+        <div 
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-xl bg-slate-900 border border-slate-800 text-white rounded-2xl shadow-2xl p-5 md:p-6 transition-all duration-300 animate-in fade-in slide-in-from-top-4"
+          id="welcome-toast-popup"
+        >
+          <div className="flex items-start gap-4">
+            <div className="p-2 bg-blue-600/25 text-blue-400 rounded-xl border border-blue-500/20 shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            
+            <div className="flex-1 space-y-1.5 pr-2 text-left">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-extrabold text-white tracking-tight">PrimeTrack Customer Hub</h3>
+                <span className="text-[9px] bg-blue-600/20 text-blue-300 border border-blue-500/10 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider shrink-0">What it does</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                This console is a <strong>unified post-purchase system</strong>. It automatically aggregates your e-commerce orders, tracks courier status updates, manages product warranty coverage, and handles returns. 
+              </p>
+              <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+                💡 Go to the <strong>Gmail Sync Ingestion</strong> tab to instantly parse real order receipts and shipping confirmation emails from your own inbox!
+              </p>
+            </div>
+
+            <button
+              onClick={handleDismissWelcome}
+              className="cursor-pointer text-slate-400 hover:text-white hover:bg-slate-800 p-1.5 rounded-lg transition shrink-0"
+              aria-label="Close welcome message"
+              id="dismiss-welcome-toast"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Toast Alert Banner */}
       {showToast && (
         <div 

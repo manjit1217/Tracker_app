@@ -1,5 +1,6 @@
 import { Order, Warranty, WarrantyClaim, ReturnRequest, OrderStatus } from '../types';
 import { GMAIL_RAW_DATA } from './gmailOrders';
+import { getWebProductUrl } from '../lib/productUrl';
 
 export const COMPASS_MAP_POINTS = [
   { x: 15, y: 80, label: "Fulfillment Center" },
@@ -21,6 +22,34 @@ export const MAP_BUILDINGS = [
 // Helper to identify and replace generic order status subject lines
 export function isGenericStatus(text: string): boolean {
   const lower = text.toLowerCase();
+
+  // If text contains genuine product identifiers, it is NEVER a generic status
+  if (
+    lower.includes('croc') ||
+    lower.includes('clog') ||
+    lower.includes('shirt') || 
+    lower.includes('jeans') || 
+    lower.includes('top') || 
+    lower.includes('skirt') || 
+    lower.includes('watch') || 
+    lower.includes('sneaker') || 
+    lower.includes('shoe') ||
+    lower.includes('footwear') ||
+    lower.includes('sandal') ||
+    lower.includes('bulb') || 
+    lower.includes('vacuum') || 
+    lower.includes('straws') || 
+    lower.includes('tape') || 
+    lower.includes('wheels') || 
+    lower.includes('hair growth') ||
+    lower.includes('earphone') ||
+    lower.includes('buds') ||
+    lower.includes('smartwatch') ||
+    lower.includes('powerbank')
+  ) {
+    return false;
+  }
+
   return (
     lower.includes('delivered') ||
     lower.includes('shipped') ||
@@ -38,19 +67,7 @@ export function isGenericStatus(text: string): boolean {
     lower === 'unknown item' ||
     lower === 'ecommerce package' ||
     lower === 'unknown article'
-  ) && 
-  !lower.includes('shirt') && 
-  !lower.includes('jeans') && 
-  !lower.includes('top') && 
-  !lower.includes('skirt') && 
-  !lower.includes('watch') && 
-  !lower.includes('sneakers') && 
-  !lower.includes('bulb') && 
-  !lower.includes('vacuum') && 
-  !lower.includes('straws') && 
-  !lower.includes('tape') && 
-  !lower.includes('wheels') && 
-  !lower.includes('hair growth');
+  );
 }
 
 export function getDeterministicProductFallback(messageId: string, platform: string): string {
@@ -108,6 +125,19 @@ export function cleanProductName(raw: string, subject: string, platform: string)
     name = subject;
   }
 
+  // Extract from retail shipping notification patterns
+  const fromOrderShippedMatch = name.match(/^(.+?)\s+from your order has been (?:shipped|delivered|dispatched|cancelled)/i) ||
+                                (subject ? subject.match(/^(.+?)\s+from your order has been (?:shipped|delivered|dispatched|cancelled)/i) : null);
+  if (fromOrderShippedMatch && fromOrderShippedMatch[1]) {
+    name = fromOrderShippedMatch[1].trim();
+  }
+
+  const yourOrderForMatch = name.match(/^Your order for\s+(.+?)\s+has been (?:shipped|delivered|dispatched|confirmed)/i) ||
+                            (subject ? subject.match(/^Your order for\s+(.+?)\s+has been (?:shipped|delivered|dispatched|confirmed)/i) : null);
+  if (yourOrderForMatch && yourOrderForMatch[1]) {
+    name = yourOrderForMatch[1].trim();
+  }
+
   const lower = name.toLowerCase();
   const lowerSub = subject.toLowerCase();
   
@@ -121,7 +151,8 @@ export function cleanProductName(raw: string, subject: string, platform: string)
     return getDeterministicProductFallback(subject || name, platform);
   }
 
-  if (isGenericStatus(name) || isGenericStatus(subject)) {
+  // Only fall back if the extracted product name itself is generic
+  if (isGenericStatus(name)) {
     return getDeterministicProductFallback(subject || name, platform);
   }
   
@@ -186,6 +217,9 @@ export function cleanProductName(raw: string, subject: string, platform: string)
   if (lowerName.includes('colourblocked suede sneakers') || lowerName.includes('rare rabbit')) {
     return 'Rare Rabbit Colourblocked Suede Sneakers';
   }
+  if (lowerName.includes('croc') || lowerName.includes('clog')) {
+    return 'CROCS Unisex Clogs';
+  }
   if (lowerName.includes('myntra return request') || lowerName.includes('myntra return')) {
     return 'Premium Casual Corduroy Jacket';
   }
@@ -218,6 +252,7 @@ export function parsePrice(priceStr: string | null): number {
 // Emoji resolver based on product category
 export function getProductEmoji(name: string): string {
   const lower = name.toLowerCase();
+  if (lower.includes('croc') || lower.includes('clog') || lower.includes('sandal')) return '🩴';
   if (lower.includes('skirt') || lower.includes('dress') || lower.includes('floral')) return '👗';
   if (lower.includes('top') || lower.includes('blouse') || lower.includes('geometric')) return '👚';
   if (lower.includes('shirt') || lower.includes('checks')) return '👕';
@@ -296,7 +331,10 @@ export function getProductImageByKeyword(name: string): string {
   if (lower.includes('laptop') || lower.includes('macbook') || lower.includes('computer') || lower.includes('monitor') || lower.includes('keyboard')) {
     return 'https://images.unsplash.com/photo-1496181130204-755241544e35?auto=format&fit=crop&w=300&q=80';
   }
-  if (lower.includes('shoe') || lower.includes('sneaker') || lower.includes('boot') || lower.includes('footwear') || lower.includes('slipper') || lower.includes('crocs') || lower.includes('nike') || lower.includes('adidas') || lower.includes('puma')) {
+  if (lower.includes('crocs') || lower.includes('clog')) {
+    return 'https://images.unsplash.com/photo-1603808033192-082d6919d3e1?auto=format&fit=crop&w=300&q=80';
+  }
+  if (lower.includes('shoe') || lower.includes('sneaker') || lower.includes('boot') || lower.includes('footwear') || lower.includes('slipper') || lower.includes('nike') || lower.includes('adidas') || lower.includes('puma')) {
     return 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=300&q=80';
   }
   if (lower.includes('shirt') || lower.includes('tshirt') || lower.includes('hoodie') || lower.includes('jacket') || lower.includes('dress') || lower.includes('kurta') || lower.includes('apparel') || lower.includes('clothing') || lower.includes('wear') || lower.includes('top')) {
@@ -465,6 +503,7 @@ export const INITIAL_ORDERS: Order[] = orderSourceData.map((raw) => {
   // Courriers
   let courierName = "Delhivery Node";
   if (raw.platform === "Amazon") courierName = "Amazon Logistics";
+  if (raw.platform === "Flipkart") courierName = "Ekart Logistics";
   if (raw.platform === "Myntra") courierName = "Ecom Express";
   if (raw.platform === "AJIO") courierName = "Bluedart Limited";
 
@@ -546,7 +585,7 @@ export const INITIAL_ORDERS: Order[] = orderSourceData.map((raw) => {
   // Infer Category
   let category = 'Electronics';
   const itemNamesString = items.map(it => it.name).join(' ').toLowerCase();
-  if (itemNamesString.includes('jeans') || itemNamesString.includes('shirt') || itemNamesString.includes('floral') || itemNamesString.includes('dress') || itemNamesString.includes('apparel') || itemNamesString.includes('sneaker') || itemNamesString.includes('shoes') || itemNamesString.includes('top') || itemNamesString.includes('jacket') || itemNamesString.includes('h&m')) {
+  if (itemNamesString.includes('jeans') || itemNamesString.includes('shirt') || itemNamesString.includes('floral') || itemNamesString.includes('dress') || itemNamesString.includes('apparel') || itemNamesString.includes('sneaker') || itemNamesString.includes('shoes') || itemNamesString.includes('top') || itemNamesString.includes('jacket') || itemNamesString.includes('h&m') || itemNamesString.includes('croc') || itemNamesString.includes('clog') || itemNamesString.includes('footwear') || itemNamesString.includes('sandal')) {
     category = 'Fashion';
   } else if (itemNamesString.includes('vacuum') || itemNamesString.includes('scotch') || itemNamesString.includes('straw') || itemNamesString.includes('tape') || itemNamesString.includes('organizer')) {
     category = 'Home';
@@ -691,7 +730,7 @@ export const INITIAL_ORDERS: Order[] = orderSourceData.map((raw) => {
     warrantyExpiryDate,
     warrantyStatus,
     serialNumber: hasWarranty ? `SN-${raw.gmail_message_id.slice(-4).toUpperCase()}-${raw.platform.slice(0, 3).toUpperCase()}` : null,
-    productUrl: raw.product_url || `https://www.${raw.platform.toLowerCase()}.com/search?q=${encodeURIComponent(items[0]?.name || '')}`,
+    productUrl: getWebProductUrl(raw.platform, items[0]?.name || raw.product_name, raw.product_url, raw.order_id),
     invoiceUrl: raw.invoice_url || `https://document-node.s3.amazonaws.com/invoices/inv-pdf-${raw.gmail_message_id.slice(0,6)}.pdf`,
     notes: ""
   };
