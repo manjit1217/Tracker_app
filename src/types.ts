@@ -24,6 +24,9 @@ export interface OrderItem {
   price: number;
   image: string;
   imageUrl?: string | null;
+  priceKnown?: boolean;
+  seller?: string | null;
+  deliveryEstimate?: string | null;
 }
 
 export interface StatusHistory {
