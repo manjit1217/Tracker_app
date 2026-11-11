@@ -75,6 +75,20 @@ export const correlateGmailOrderEvents = (events: GmailOrderRaw[]): GmailOrderRa
     if (!current.return_id && event.return_id) current.return_id = event.return_id;
     if (!current.return_date && event.return_date) current.return_date = event.return_date;
     if (!current.delivery_date && event.delivery_date) current.delivery_date = event.delivery_date;
+    if (!current.expected_delivery_date && event.expected_delivery_date) current.expected_delivery_date = event.expected_delivery_date;
+    if (!current.return_by_date && event.return_by_date) current.return_by_date = event.return_by_date;
+    if (current.return_window_days == null && event.return_window_days != null) current.return_window_days = event.return_window_days;
+    if (current.is_returnable == null && event.is_returnable != null) current.is_returnable = event.is_returnable;
+    if (!current.return_policy_text && event.return_policy_text) current.return_policy_text = event.return_policy_text;
+    if (!current.order_date && event.order_date) current.order_date = event.order_date;
+    if (!current.return_id && event.return_id) current.return_id = event.return_id;
+    if (!current.return_date && event.return_date) current.return_date = event.return_date;
+    if (!current.invoice_url && event.invoice_url) current.invoice_url = event.invoice_url;
+    if (!current.product_url && event.product_url) current.product_url = event.product_url;
+    if (!current.price && event.price) current.price = event.price;
+    if ((!current.products || current.products.length === 0) && event.products?.length) current.products = event.products;
+    if (!current.product_image_url && event.product_image_url) current.product_image_url = event.product_image_url;
+    if (!current.email_received_at && event.email_received_at) current.email_received_at = event.email_received_at;
 
     if (statusPriority(event.status) > statusPriority(current.status)) {
       current.status = event.status;
