@@ -44,28 +44,23 @@ function decodeBase64Html(data: string): string {
   }
 }
 
-function getEmailHtmlBody(payload: any): string {
-  if (!payload) return '';
-  if (payload.mimeType === 'text/html' && payload.body?.data) return decodeBase64Html(payload.body.data);
-  if (payload.parts) {
-    for (const part of payload.parts) {
-      const body = getEmailHtmlBody(part);
-      if (body) return body;
-    }
+function collectMimeBodies(payload: any, mimeType: 'text/html' | 'text/plain'): string[] {
+  if (!payload) return [];
+  const bodies: string[] = [];
+  if (payload.mimeType === mimeType && payload.body?.data) {
+    const decoded = decodeBase64Html(payload.body.data);
+    if (decoded) bodies.push(decoded);
   }
-  return '';
+  for (const part of payload.parts || []) bodies.push(...collectMimeBodies(part, mimeType));
+  return bodies;
+}
+
+function getEmailHtmlBody(payload: any): string {
+  return collectMimeBodies(payload, 'text/html').join('\n');
 }
 
 function getEmailTextBody(payload: any): string {
-  if (!payload) return '';
-  if (payload.mimeType === 'text/plain' && payload.body?.data) return decodeBase64Html(payload.body.data);
-  if (payload.parts) {
-    for (const part of payload.parts) {
-      const body = getEmailTextBody(part);
-      if (body) return body;
-    }
-  }
-  return '';
+  return collectMimeBodies(payload, 'text/plain').join('\n');
 }
 
 function normalizeEmailDate(value: string | undefined): string | null {
@@ -273,7 +268,7 @@ export const fetchGmailOrders = async (
 
   try {
     // 1. Search for orders, confirmation, delivery, return, refund emails
-    const query = options.query?.trim() || 'newer_than:365d {order confirmation shipped delivered return refund purchase}';
+    const query = options.query?.trim() || 'newer_than:730d {order confirmation placed purchase shipped dispatched delivered arriving "out for delivery" return refund replacement cancelled}';
     addLog('INFO', `Searching user inbox with filter: [${query}]`);
     
     const messages: GmailMessageSummary[] = [];
@@ -317,7 +312,8 @@ export const fetchGmailOrders = async (
       const headers = message.payload?.headers || [];
       const htmlBody = getEmailHtmlBody(message.payload);
       const plainTextBody = getEmailTextBody(message.payload);
-      const snippet = [message.snippet || '', htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ') : ''].join(' ').replace(/\s+/g, ' ');
+      const bodyText = [plainTextBody, htmlBody.replace(/<[^>]*>/g, ' ')].filter(Boolean).join(' ');
+      const snippet = [message.snippet || '', bodyText].join(' ').replace(/\s+/g, ' ');
       
       const subject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || 'No Subject';
       const from = headers.find((h: any) => h.name.toLowerCase() === 'from')?.value || '';
@@ -376,7 +372,7 @@ export const fetchGmailOrders = async (
       let status = 'Unknown';
       let returnId: string | null = null;
       let returnDate: string | null = null;
-      const statusText = (subject + ' ' + snippet).toLowerCase();
+      const statusText = (subject + ' ' + snippet + ' ' + plainTextBody + ' ' + htmlBody.replace(/<[^>]*>/g, ' ')).toLowerCase();
 
       if (/refund (?:has been )?(?:credited|completed|processed)|refund successful|refund success/.test(statusText)) {
         status = 'Refund Success';
