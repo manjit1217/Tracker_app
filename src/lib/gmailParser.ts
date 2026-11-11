@@ -1,6 +1,7 @@
 import { GmailOrderRaw } from '../data/gmailOrders';
 import { getWebProductUrl, extractProductUrlFromHtml } from './productUrl';
 import { extractAmazonEmail } from './amazonExtractor';
+import { extractFlipkartOrder } from './flipkartExtractor';
 
 interface GmailMessageSummary {
   id: string;
@@ -320,6 +321,8 @@ export const fetchGmailOrders = async (
 
       // Parse Order ID
       const amazonExtraction = platform === 'Amazon' ? extractAmazonEmail(htmlBody) : null;
+      const flipkartExtraction = platform === 'Flipkart' && htmlBody ? extractFlipkartOrder(htmlBody) : null;
+      if (flipkartExtraction?.orderId) orderId = flipkartExtraction.orderId;
       let orderId: string | null = amazonExtraction?.orderId || null;
       // Match marketplace-specific identifiers from normalized email text.
       const amazonOrderMatch = snippet.match(/\b\d{3}-\d{7}-\d{7}\b/) || subject.match(/\b\d{3}-\d{7}-\d{7}\b/);
@@ -372,6 +375,11 @@ export const fetchGmailOrders = async (
 
       // Product Name Extraction
       let productName = '';
+      if (flipkartExtraction?.products.length) {
+        productName = flipkartExtraction.products.map(item => item.name).join('; ');
+        productImageUrl = flipkartExtraction.products.map(item => item.imageUrl || '').join('; ');
+        if (flipkartExtraction.amountPaid !== null) price = `₹${flipkartExtraction.amountPaid.toFixed(2)}`;
+      }
       let productImageUrl = '';
       let productUrlFromAmazon = '';
       if (platform === 'Amazon' && amazonExtraction) {
@@ -469,6 +477,8 @@ export const fetchGmailOrders = async (
         invoice_url: null,
         email_subject: subject,
         email_received_at: message.internalDate ? new Date(Number(message.internalDate)).toISOString() : null,
+        order_date: flipkartExtraction?.orderDate || null,
+        products: flipkartExtraction?.products,
         event_type: status === 'Unknown' ? 'unknown' : status.toLowerCase().replace(/\s+/g, '_'),
       });
       
