@@ -387,14 +387,7 @@ export default function App() {
         type: "success"
       });
     } else {
-      setOrders(INITIAL_ORDERS);
-      setWarranties(INITIAL_WARRANTIES);
-      setReturns(INITIAL_RETURNS);
-      setSelectedOrderId(INITIAL_ORDERS[0]?.id || '');
-      setShowToast({
-        message: "Sync Complete: Ingested 21 order items with warranty/return details successfully from Gmail service flow.",
-        type: "success"
-      });
+      setShowToast({ message: "Gmail sync completed. No new matching orders were found; existing data was preserved.", type: "info" });
     }
   };
 

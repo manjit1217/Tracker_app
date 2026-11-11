@@ -3,16 +3,16 @@ import { GmailOrderRaw } from '../data/gmailOrders';
 import { parsePrice, getProductEmoji } from '../data/mockData';
 import { getWebProductUrl } from './productUrl';
 
-const parseDateSafe = (dateStr: string): Date => {
+const parseDateSafe = (dateStr: string): Date | null => {
+  if (!dateStr) return null;
   const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? new Date() : d;
+  return isNaN(d.getTime()) ? null : d;
 };
 
 const datesClose = (d1Str: string, d2Str: string, maxDays = 5): boolean => {
-  const t1 = parseDateSafe(d1Str).getTime();
-  const t2 = parseDateSafe(d2Str).getTime();
-  const diffDays = Math.abs(t1 - t2) / (1000 * 60 * 60 * 24);
-  return diffDays <= maxDays;
+  const d1 = parseDateSafe(d1Str); const d2 = parseDateSafe(d2Str);
+  if (!d1 || !d2) return false;
+  return Math.abs(d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24) <= maxDays;
 };
 
 const getStatusPriority = (statusStr: string, emailSubject?: string): number => {
@@ -57,21 +57,10 @@ export const mapGmailRawToDomain = (
         return false;
       }
 
-      // 2. If products are the same and dates are within 5 days, they are duplicates
-      const isSameProduct = cleanName === (existing.product_name || '').toLowerCase().trim() ||
-                            cleanName.includes((existing.product_name || '').toLowerCase().trim()) ||
-                            (existing.product_name || '').toLowerCase().trim().includes(cleanName);
-
-      if (isSameProduct && datesClose(raw.delivery_date, existing.delivery_date, 5)) {
-        return true;
-      }
-
-      // 3. If both have real order IDs and they are equal, they are duplicates
+      if (raw.gmail_message_id && raw.gmail_message_id === existing.gmail_message_id) return true;
       const rawHasRealId = isRealOrderId(raw.order_id);
       const existingHasRealId = isRealOrderId(existing.order_id);
-      if (rawHasRealId && existingHasRealId) {
-        return raw.order_id === existing.order_id;
-      }
+      if (rawHasRealId && existingHasRealId) return raw.order_id === existing.order_id;
 
       return false;
     });
@@ -132,16 +121,18 @@ export const mapGmailRawToDomain = (
   });
 
   mergedRaw.forEach((raw) => {
-    const orderId = raw.gmail_message_id;
+    const orderId = raw.order_id && isRealOrderId(raw.order_id) ? raw.order_id : raw.gmail_message_id;
     const trackingNumber = raw.order_id && !raw.order_id.startsWith('MISSING-') && !raw.order_id.startsWith('GML-') && !raw.order_id.startsWith('TRK-')
       ? raw.order_id
       : `TRK-${raw.gmail_message_id.slice(-8).toUpperCase()}`;
 
     // Map raw status to OrderStatus
-    let status: OrderStatus = 'delivered';
+    let status: OrderStatus = 'processing';
     const emailLower = (raw.email_subject || '').toLowerCase();
     
-    if (raw.status === 'Shipped') {
+    if (raw.status === 'Out for Delivery') {
+      status = 'out_for_delivery';
+    } else if (raw.status === 'Shipped') {
       if (emailLower.includes('out for delivery') || emailLower.includes('out_for_delivery')) {
         status = 'out_for_delivery';
       } else {
@@ -151,7 +142,8 @@ export const mapGmailRawToDomain = (
       status = 'processing';
     }
 
-    const priceValue = parsePrice(raw.price) || 899;
+    const parsedPrice = parsePrice(raw.price);
+    const priceValue = parsedPrice > 0 ? parsedPrice : 0;
 
     // Create item list
     const itemsRaw = (raw.product_name || '').split(';').map(itm => itm.trim()).filter(Boolean);
@@ -238,7 +230,7 @@ export const mapGmailRawToDomain = (
                    raw.platform === 'Flipkart' ? 'Ekart Logistics' :
                    raw.platform === 'Myntra' ? 'Ecom Express' : 
                    raw.platform === 'AJIO' ? 'Bluedart Limited' : 'Delhivery Node',
-      courierPhone: `+91 91522 ${Math.floor(10000 + Math.random() * 90000)}`,
+      courierPhone: '',
       history,
       platform: raw.platform,
       returnEligible: raw.is_returnable || false,
@@ -333,24 +325,7 @@ export const deduplicateOrders = (orders: Order[]): Order[] => {
         return false;
       }
 
-      // Check if they share the same items or similar item names
-      const existingItems = existing.items.map(i => i.name.toLowerCase().trim());
-      const ordItems = ord.items.map(i => i.name.toLowerCase().trim());
-      
-      const hasOverlap = ordItems.some(oName => 
-        existingItems.some(eName => eName.includes(oName) || oName.includes(eName))
-      );
-
-      if (!hasOverlap) {
-        return false;
-      }
-
-      // If dates are close
-      if (isDatesClose(existing.orderDate, ord.orderDate, 5)) {
-        return true;
-      }
-
-      return false;
+      return existing.id === ord.id || existing.trackingNumber === ord.trackingNumber;
     });
 
     if (dupIdx > -1) {

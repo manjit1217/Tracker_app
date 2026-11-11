@@ -1,4 +1,4 @@
-import { GmailOrderRaw, GMAIL_RAW_DATA } from '../data/gmailOrders';
+import { GmailOrderRaw } from '../data/gmailOrders';
 import { getWebProductUrl, extractProductUrlFromHtml } from './productUrl';
 
 interface GmailMessageSummary {
@@ -322,46 +322,30 @@ export const fetchGmailOrders = async (
 
   addLog('INFO', 'Initiating Gmail inbox connection over secure OAuth / API bridge...');
 
-  // If using local/app-password credential flow, provide an authentic interactive sync experience
-  if (accessToken === 'app-password-token' || accessToken.startsWith('simulated-')) {
-    addLog('INFO', 'Authenticating via secure Gmail IMAP / App Password channel...');
-    await new Promise(r => setTimeout(r, 400));
-    addLog('SUCCESS', 'Credentials validated with Gmail IMAP server (imap.gmail.com:993).');
-    addLog('INFO', 'Searching user inbox with filter: [subject:(order OR confirmation OR shipped OR delivered OR refund OR purchase OR crocs OR flipkart OR myntra OR amazon OR ajio)]');
-    await new Promise(r => setTimeout(r, 400));
-    addLog('SUCCESS', `Found ${GMAIL_RAW_DATA.length} verified purchase receipt emails in inbox.`);
-    
-    for (let i = 0; i < Math.min(8, GMAIL_RAW_DATA.length); i++) {
-      await new Promise(r => setTimeout(r, 80));
-      const ord = GMAIL_RAW_DATA[i];
-      addLog('INFO', `Processing Email: "${ord.email_subject.substring(0, 45)}" from ${ord.platform}`);
-      addLog('SUCCESS', `Parsed: ${ord.product_name} (${ord.platform}) - Value: ${ord.price || '₹1,299'}`);
-    }
-    addLog('SUCCESS', `Ingested ${GMAIL_RAW_DATA.length} live synchronized items securely!`);
-    return GMAIL_RAW_DATA;
-  }
-  
+  if (!accessToken || accessToken === 'app-password-token' || accessToken.startsWith('simulated-')) throw new Error('A valid Google OAuth access token is required. App Password login is not supported.');
+
   try {
     // 1. Search for orders, confirmation, delivery, return, refund emails
-    const query = 'subject:(order OR confirmation OR shipped OR delivered OR refund OR purchase OR crocs OR myntra OR amazon OR flipkart OR ajio)';
+    const query = 'newer_than:365d {order confirmation shipped delivered return refund purchase}';
     addLog('INFO', `Searching user inbox with filter: [${query}]`);
     
-    const searchUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=15`;
-    const searchRes = await fetch(searchUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!searchRes.ok) {
-      throw new Error(`Gmail API search failed with status ${searchRes.status}: ${await searchRes.text()}`);
-    }
-
-    const searchData = await searchRes.json();
-    const messages: GmailMessageSummary[] = searchData.messages || [];
+    const messages: GmailMessageSummary[] = [];
+    let pageToken: string | undefined;
+    const maxResults = 1000;
+    do {
+      const params = new URLSearchParams({ q: query, maxResults: '500' });
+      if (pageToken) params.set('pageToken', pageToken);
+      const searchRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?' + params.toString(), { headers: { Authorization: 'Bearer ' + accessToken } });
+      if (!searchRes.ok) throw new Error('Gmail API search failed (' + searchRes.status + '): ' + await searchRes.text());
+      const searchData = await searchRes.json();
+      messages.push(...(searchData.messages || []).slice(0, Math.max(0, maxResults - messages.length)));
+      pageToken = searchData.nextPageToken;
+    } while (pageToken && messages.length < maxResults);
 
     addLog('SUCCESS', `Found ${messages.length} potential transactional emails in your inbox.`);
 
     if (messages.length === 0) {
-      addLog('WARN', 'No matching e-commerce receipts found. Utilizing secure interactive mock-sync backfill for demonstration.');
+      addLog('SUCCESS', 'No matching purchase emails found. No demo data was imported.');
       return [];
     }
 
@@ -383,7 +367,7 @@ export const fetchGmailOrders = async (
       }
 
       const message = await detailRes.json();
-      const snippet = message.snippet || '';
+      const snippet = [message.snippet || '', htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ') : ''].join(' ').replace(/\s+/g, ' ');
       const headers = message.payload?.headers || [];
       const htmlBody = getEmailHtmlBody(message.payload);
       
@@ -418,8 +402,11 @@ export const fetchGmailOrders = async (
       }
 
       // Parse Date
-      let deliveryDate = new Date().toISOString().split('T')[0];
-      if (dateHeader) {
+      let deliveryDate = '';
+      if (message.internalDate) {
+        const internalDate = new Date(Number(message.internalDate));
+        if (!isNaN(internalDate.getTime())) deliveryDate = internalDate.toISOString().split('T')[0];
+      } else if (dateHeader) {
         const parsedDate = new Date(dateHeader);
         if (!isNaN(parsedDate.getTime())) {
           deliveryDate = parsedDate.toISOString().split('T')[0];
@@ -440,26 +427,26 @@ export const fetchGmailOrders = async (
       } else if (generalOrderMatch && generalOrderMatch[1]) {
         orderId = generalOrderMatch[1].trim();
       } else {
-        orderId = `GML-${msgSummary.id.substring(0, 8).toUpperCase()}`;
+        orderId = null;
       }
 
       // Parse Status
-      let status = 'Delivered';
+      let status = 'Unknown';
       let returnId: string | null = null;
       let returnDate: string | null = null;
 
       if (subjectLower.includes('refund') || snippetLower.includes('refund')) {
-        status = 'Refund Success';
+        status = 'Pending Refund';
         const returnMatch = snippet.match(/(?:return|refund)\s*(?:id|num|#)?\s*[:#-]?\s*([a-zA-Z0-9]+)/i);
         if (returnMatch) returnId = returnMatch[1];
       } else if (subjectLower.includes('return') || snippetLower.includes('return')) {
-        status = 'Returned';
+        status = 'Return Requested';
         const returnMatch = snippet.match(/(?:return|refund)\s*(?:id|num|#)?\s*[:#-]?\s*([a-zA-Z0-9]+)/i);
         if (returnMatch) returnId = returnMatch[1];
       } else if (subjectLower.includes('shipped') || snippetLower.includes('shipped') || snippetLower.includes('out for delivery') || subjectLower.includes('on its way')) {
         status = 'Shipped';
       } else if (subjectLower.includes('confirm') || snippetLower.includes('confirm') || snippetLower.includes('placed') || subjectLower.includes('thank you for your order')) {
-        status = 'Delivered'; // Fallback to delivered for dashboard tracking
+        status = 'Pending'; // Confirmation does not prove delivery
       }
 
       // Parse Price / Amount
@@ -468,9 +455,6 @@ export const fetchGmailOrders = async (
                             subject.match(/(?:₹|Rs\.?|INR)\s?(\d+(?:,\d{3})*(?:\.\d{2})?)/i);
       if (currencyMatch) {
         price = `₹${currencyMatch[1]}`;
-      } else {
-        // Fallback default
-        price = '₹899.00';
       }
 
       // Product Name Extraction
@@ -530,23 +514,12 @@ export const fetchGmailOrders = async (
       }
 
       // Determine return policy details based on platform
-      let isReturnable = true;
-      let returnWindowDays = 10;
-      if (platform === 'Myntra') returnWindowDays = 14;
-      else if (platform === 'AJIO') returnWindowDays = 15;
-      else if (platform === 'Flipkart') returnWindowDays = 7;
-      else if (platform === 'Amazon') returnWindowDays = 10;
+      let isReturnable: boolean | null = null;
+      let returnWindowDays: number | null = null;
 
       // Calculate return date
-      const orderDateObj = new Date(deliveryDate);
-      const returnDateObj = new Date(orderDateObj);
-      returnDateObj.setDate(orderDateObj.getDate() + returnWindowDays);
-      const returnByDate = returnDateObj.toISOString().split('T')[0];
-
-      // Calculate days left
-      const today = new Date();
-      const diffTime = returnDateObj.getTime() - today.getTime();
-      const returnDaysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const returnByDate: string | null = null;
+      const returnDaysLeft: number | null = null;
 
       // Warranty calculation
       let warrantyMonths: number | null = null;
@@ -556,12 +529,7 @@ export const fetchGmailOrders = async (
       const productLower = productName.toLowerCase();
       const matchesElectronic = electronicKeywords.some(keyword => productLower.includes(keyword) || subjectLower.includes(keyword));
 
-      if (matchesElectronic) {
-        warrantyMonths = 12; // 1 year standard warranty
-        const warrantyDateObj = new Date(deliveryDate);
-        warrantyDateObj.setMonth(warrantyDateObj.getMonth() + 12);
-        warrantyExpiry = warrantyDateObj.toISOString().split('T')[0];
-      }
+      // Warranty details stay unknown unless explicitly present in the email.
 
       const extractedUrl = htmlBody ? extractProductUrlFromHtml(htmlBody, platform, productName) : null;
       const resolvedProductUrl = getWebProductUrl(platform, productName, extractedUrl, orderId);

@@ -71,11 +71,7 @@ export default function GmailSyncManager({
   const [accessToken, setAccessTokenState] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // Manual credentials states
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMethod, setAuthMethod] = useState<'oauth' | 'credentials'>('oauth');
-  const [manualEmail, setManualEmail] = useState('');
-  const [manualPassword, setManualPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
   useEffect(() => {
@@ -85,30 +81,7 @@ export default function GmailSyncManager({
         setAccessTokenState(token);
       },
       () => {
-        const savedManual = localStorage.getItem('primetrack_manual_gmail_user');
-        if (!savedManual) {
-          setCurrentUser(null);
-          setAccessTokenState(null);
-        }
-      }
-    );
-
-    const savedManual = localStorage.getItem('primetrack_manual_gmail_user');
-    if (savedManual) {
-      try {
-        const parsed = JSON.parse(savedManual);
-        setCurrentUser({
-          email: parsed.email,
-          isAppPasswordFlow: true,
-          photoURL: null
-        });
-        setAccessTokenState('app-password-token');
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    return () => unsubscribe();
+        return () => unsubscribe();
   }, []);
 
   const handleGoogleSignIn = async () => {
@@ -135,49 +108,11 @@ export default function GmailSyncManager({
   const handleGoogleLogout = async () => {
     try {
       await logout();
-      localStorage.removeItem('primetrack_manual_gmail_user');
       setCurrentUser(null);
       setAccessTokenState(null);
       setTestReminderLogs(prev => [`[${new Date().toLocaleTimeString()}] INFO: OAuth / Credential Session terminated. Local token revoked.`, ...prev]);
     } catch (err: any) {
       console.error(err);
-    }
-  };
-
-  const handleManualLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-    if (!manualEmail || !manualEmail.includes('@')) {
-      setAuthError('Please enter a valid Gmail address.');
-      return;
-    }
-    if (!manualPassword || manualPassword.trim().length < 4) {
-      setAuthError('Please enter a valid password or App Password (minimum 4 characters).');
-      return;
-    }
-
-    setIsLoggingIn(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      const userObj = {
-        email: manualEmail,
-        isAppPasswordFlow: true,
-        photoURL: null
-      };
-
-      localStorage.setItem('primetrack_manual_gmail_user', JSON.stringify(userObj));
-      setCurrentUser(userObj);
-      setAccessTokenState('app-password-token');
-      setShowAuthModal(false);
-      setTestReminderLogs(prev => [`[${new Date().toLocaleTimeString()}] SUCCESS: Gmail custom credentials authorized for: ${manualEmail}`, ...prev]);
-      
-      // Proceed with sync directly using the simulated credentials token
-      await startSyncWithToken('app-password-token');
-    } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed');
-    } finally {
-      setIsLoggingIn(false);
     }
   };
 
@@ -198,7 +133,7 @@ export default function GmailSyncManager({
       setSyncStep(1); // Step: Querying Gmail API
       const rawOrders = await fetchGmailOrders(tokenToUse, (logObj) => {
         addLogMessage(`[${logObj.timestamp}] ${logObj.level}: ${logObj.message}`);
-      });
+      }, { query: config.gmail_query, maxResults: config.gmail_max_results });
 
       setSyncStep(2); // Step: Processing MIME Headers
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -221,18 +156,8 @@ export default function GmailSyncManager({
         
         onTriggerGmailImport(mapped.orders, mapped.warranties, mapped.returns);
       } else {
-        // No orders found, load beautiful mock orders so experience is interactive
-        setSyncStep(3);
-        addLogMessage(`[${new Date().toLocaleTimeString()}] WARN: No active digital purchases found in this inbox. Standard sandbox backfill utilized.`);
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        setSyncStep(4);
-        setSuccessCount({
-          orders: 21,
-          warranties: 5,
-          returns: 2
-        });
-        onTriggerGmailImport([]); // Fallback to high-fidelity mock data in App state
+        setSuccessCount({ orders: 0, warranties: 0, returns: 0 });
+        addLogMessage(`[${new Date().toLocaleTimeString()}] INFO: No matching orders found. Existing orders were left unchanged.`);
       }
       setSyncStep(5);
     } catch (error: any) {
@@ -1041,113 +966,12 @@ class AppSettings(BaseModel):
               </button>
             </div>
 
-            {/* Content Tabs */}
-            <div className="p-6 space-y-5">
-              <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMethod('oauth');
-                    setAuthError('');
-                  }}
-                  className={`flex-1 py-2 font-bold rounded-md transition text-center cursor-pointer ${
-                    authMethod === 'oauth' ? 'bg-white text-blue-600 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  OAuth 2.0 (Automatic)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMethod('credentials');
-                    setAuthError('');
-                  }}
-                  className={`flex-1 py-2 font-bold rounded-md transition text-center cursor-pointer ${
-                    authMethod === 'credentials' ? 'bg-white text-blue-600 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  App Password (Credentials)
-                </button>
-              </div>
-
-              {authError && (
-                <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 text-xs flex gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <p className="font-semibold">{authError}</p>
-                </div>
-              )}
-
-              {authMethod === 'oauth' ? (
-                <div className="space-y-4 text-center">
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Connect your Google account instantly using Google Secure Sign-In. We only request read-only access to parse purchase confirmation emails.
-                  </p>
-                  
-                  <button
-                    type="button"
-                    onClick={handleGoogleSignIn}
-                    disabled={isLoggingIn}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-3 px-4 rounded-xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
-                    id="oauth-signin-btn"
-                  >
-                    <Mail className="w-4 h-4" />
-                    {isLoggingIn ? 'Redirecting to Google Secure...' : 'Sign In with Google Account'}
-                  </button>
-                  
-                  <p className="text-[10px] text-slate-400">
-                    🔒 Secured by Firebase Auth & Google Identity Services.
-                  </p>
-                </div>
-              ) : (
-                <form onSubmit={handleManualLoginSubmit} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wider font-mono block">Gmail Address</label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="e.g. manjit.1217@gmail.com"
-                      value={manualEmail}
-                      onChange={(e) => setManualEmail(e.target.value)}
-                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-blue-600 transition"
-                      id="manual-email-input"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wider font-mono block">Gmail App Password</label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="e.g. xxxx xxxx xxxx xxxx"
-                      value={manualPassword}
-                      onChange={(e) => setManualPassword(e.target.value)}
-                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-blue-600 transition"
-                      id="manual-password-input"
-                    />
-                    <p className="text-[10px] text-slate-400 leading-normal">
-                      For security, generate a 16-character App Password inside Google Account settings: <strong className="text-slate-600 font-semibold">Security &gt; 2-Step Verification &gt; App passwords</strong>.
-                    </p>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isLoggingIn}
-                    className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-3 px-4 rounded-xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer mt-2 animate-in slide-in-from-bottom-2"
-                    id="credential-signin-btn"
-                  >
-                    {isLoggingIn ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>Verifying credentials...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Integrate Credentials & Sync</span>
-                      </>
-                    )}
-                  </button>
-                </form>
-              )}
+            <div className="p-6 space-y-4 text-center">
+              <p className="text-xs text-slate-600 leading-relaxed">Connect Gmail using Google OAuth. This integration requests read-only access to transactional emails. Gmail App Passwords are not supported in this browser flow.</p>
+              {authError && <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 text-xs">{authError}</div>}
+              <button type="button" onClick={handleGoogleSignIn} disabled={isLoggingIn} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-3 px-4 rounded-xl shadow-sm transition disabled:opacity-50">
+                {isLoggingIn ? 'Connecting to Google...' : 'Sign in with Google'}
+              </button>
             </div>
           </div>
         </div>
