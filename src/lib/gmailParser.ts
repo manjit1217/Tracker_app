@@ -68,6 +68,36 @@ function getEmailTextBody(payload: any): string {
   return '';
 }
 
+function normalizeEmailDate(value: string | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value.replace(/(\\d)(st|nd|rd|th)\\b/gi, '$1'));
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+
+function extractDateAfter(text: string, labels: RegExp): string | null {
+  const datePattern = '(January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{1,2},?\\s+\\d{4}|\\d{1,2}\\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{4}|\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}|\\d{4}-\\d{2}-\\d{2}';
+  const match = text.match(new RegExp('(?:' + labels.source + ')\\\\s*(?:is|on|by|until|:|-)?\\\\s*(' + datePattern + ')', 'i'));
+  return normalizeEmailDate(match?.[1]);
+}
+
+function extractAmazonDeliveryEvidence(text: string, status: string) {
+  const actualDeliveryDate = status === 'Delivered' ? extractDateAfter(text, /delivered(?:\\s+on)?|delivery date/) : null;
+  const expectedDeliveryDate = status !== 'Delivered' ? extractDateAfter(text, /expected delivery(?: date)?|arriving(?: on)?|delivery by|will be delivered/) : null;
+  const returnByDate = extractDateAfter(text, /return(?: or replacement)?(?: eligible)? until|return by|eligible for return until|return window ends/);
+  const returnWindow = text.match(/return(?: or replacement)? within\\s+(\\d{1,2})\\s+days?/i);
+  const nonReturnable = /non[- ]returnable|not eligible for (?:return|replacement)/i.test(text);
+  const explicitlyReturnable = /eligible for (?:return|replacement)|returnable until|return within\\s+\\d{1,2}\\s+days?/i.test(text);
+  return {
+    actualDeliveryDate, expectedDeliveryDate, returnByDate,
+    returnWindowDays: returnWindow ? Number(returnWindow[1]) : null,
+    isReturnable: nonReturnable ? false : explicitlyReturnable ? true : null,
+    returnPolicyText: nonReturnable ? 'Email states this item is non-returnable.'
+      : returnByDate ? 'Return deadline stated in the email.'
+      : returnWindow ? `Email states a ${returnWindow[1]}-day return window.` : null,
+  };
+}
+
+
 export function parseMyntraHtml(htmlContent: string): ParsedMyntraItem[] {
   const items: ParsedMyntraItem[] = [];
   try {
@@ -319,13 +349,8 @@ export const fetchGmailOrders = async (
         continue;
       }
 
-      // Parse Date
+      // Dates are extracted only when the email explicitly labels their meaning.
       let deliveryDate = '';
-      const explicitDeliveryDate = snippet.match(/(?:delivered|delivery date)\s*(?:on|:)?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})/i);
-      if (explicitDeliveryDate) {
-        const parsedDate = new Date(explicitDeliveryDate[1]);
-        if (!isNaN(parsedDate.getTime())) deliveryDate = parsedDate.toISOString().split('T')[0];
-      }
 
       // Parse Order ID
       const amazonExtraction = platform === 'Amazon' ? extractAmazonEmail(htmlBody, plainTextBody) : null;
@@ -373,6 +398,11 @@ export const fetchGmailOrders = async (
       }
       const returnMatch = snippet.match(/(?:return|refund)\s*(?:id|num|number|#)?\s*[:#-]?\s*([a-zA-Z0-9-]{5,})/i);
       if (returnMatch) returnId = returnMatch[1];
+      const deliveryEvidence = extractAmazonDeliveryEvidence(
+        `${subject} ${snippet} ${plainTextBody} ${htmlBody.replace(/<[^>]*>/g, ' ')}`,
+        status
+      );
+      deliveryDate = deliveryEvidence.actualDeliveryDate || '';
 
       // Parse Price / Amount
       let price: string | null = amazonExtraction?.orderTotal || null;
@@ -442,11 +472,9 @@ export const fetchGmailOrders = async (
       // Do not substitute stock images for missing source images.
 
       // Determine return policy details based on platform
-      let isReturnable: boolean | null = null;
-      let returnWindowDays: number | null = null;
-
-      // Calculate return date
-      const returnByDate: string | null = null;
+      let isReturnable: boolean | null = deliveryEvidence.isReturnable;
+      let returnWindowDays: number | null = deliveryEvidence.returnWindowDays;
+      const returnByDate: string | null = deliveryEvidence.returnByDate;
       const returnDaysLeft: number | null = null;
 
       // Warranty calculation
@@ -481,6 +509,8 @@ export const fetchGmailOrders = async (
         product_image_url: productImageUrl,
         product_url: resolvedProductUrl,
         delivery_date: deliveryDate,
+        expected_delivery_date: deliveryEvidence.expectedDeliveryDate,
+        return_policy_text: deliveryEvidence.returnPolicyText,
         invoice_url: null,
         email_subject: subject,
         email_received_at: message.internalDate ? new Date(Number(message.internalDate)).toISOString() : null,
