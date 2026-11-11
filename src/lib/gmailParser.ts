@@ -424,7 +424,9 @@ export const fetchGmailOrders = async (
         }
       }
 
-      // Do not substitute stock images for missing source images.\n\n      // Determine return policy details based on platform
+      // Do not substitute stock images for missing source images.
+
+      // Determine return policy details based on platform
       let isReturnable: boolean | null = null;
       let returnWindowDays: number | null = null;
 
