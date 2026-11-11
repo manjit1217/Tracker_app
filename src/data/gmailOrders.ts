@@ -19,6 +19,8 @@ export interface GmailOrderRaw {
   delivery_date: string;
   invoice_url: string | null;
   email_subject: string;
+  email_received_at?: string | null;
+  event_type?: string;
 }
 
 export const GMAIL_RAW_DATA: GmailOrderRaw[] = [

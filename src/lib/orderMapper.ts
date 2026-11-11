@@ -2,6 +2,7 @@ import { Order, Warranty, ReturnRequest, OrderStatus } from '../types';
 import { GmailOrderRaw } from '../data/gmailOrders';
 import { parsePrice, getProductEmoji } from '../data/mockData';
 import { getWebProductUrl } from './productUrl';
+import { correlateGmailOrderEvents, isStableMarketplaceOrderId } from './orderCorrelation';
 
 const parseDateSafe = (dateStr: string): Date | null => {
   if (!dateStr) return null;
@@ -45,83 +46,11 @@ export const mapGmailRawToDomain = (
   const mappedWarranties: Warranty[] = [];
   const mappedReturns: ReturnRequest[] = [];
 
-  // Deduplicate and merge multi-stage transactional emails
-  const mergedRaw: GmailOrderRaw[] = [];
-
-  rawList.forEach((raw) => {
-    const cleanName = (raw.product_name || '').toLowerCase().trim();
-    
-    const duplicateIndex = mergedRaw.findIndex((existing) => {
-      // 1. Same platform
-      if (existing.platform.toLowerCase() !== raw.platform.toLowerCase()) {
-        return false;
-      }
-
-      if (raw.gmail_message_id && raw.gmail_message_id === existing.gmail_message_id) return true;
-      const rawHasRealId = isRealOrderId(raw.order_id);
-      const existingHasRealId = isRealOrderId(existing.order_id);
-      if (rawHasRealId && existingHasRealId) return raw.order_id === existing.order_id;
-
-      return false;
-    });
-
-    if (duplicateIndex > -1) {
-      const existing = mergedRaw[duplicateIndex];
-      const rawPriority = getStatusPriority(raw.status, raw.email_subject);
-      const existingPriority = getStatusPriority(existing.status, existing.email_subject);
-
-      if (rawPriority > existingPriority) {
-        // Overwrite status and tracking properties from the newer/more advanced email
-        existing.status = raw.status;
-        existing.email_subject = raw.email_subject;
-        existing.gmail_message_id = raw.gmail_message_id;
-        if (raw.price && raw.price !== '₹899.00') {
-          existing.price = raw.price;
-        }
-        if (raw.product_image_url) {
-          const existingImgs = (existing.product_image_url || '').split(';').map(u => u.trim()).filter(Boolean);
-          const rawImgs = (raw.product_image_url || '').split(';').map(u => u.trim()).filter(Boolean);
-          const combinedImgs = Array.from(new Set([...existingImgs, ...rawImgs]));
-          existing.product_image_url = combinedImgs.join('; ');
-        }
-        if (raw.product_name) {
-          const existingNames = (existing.product_name || '').split(';').map(n => n.trim()).filter(Boolean);
-          const rawNames = (raw.product_name || '').split(';').map(n => n.trim()).filter(Boolean);
-          const combinedNames = Array.from(new Set([...existingNames, ...rawNames]));
-          existing.product_name = combinedNames.join('; ');
-        }
-        existing.is_returnable = raw.is_returnable;
-        existing.return_by_date = raw.return_by_date;
-        existing.return_days_left = raw.return_days_left;
-        existing.return_highlight = raw.return_highlight;
-        existing.delivery_date = raw.delivery_date;
-      } else {
-        const rawHasRealId = isRealOrderId(raw.order_id);
-        const existingHasRealId = isRealOrderId(existing.order_id);
-        if (rawHasRealId && !existingHasRealId) {
-          existing.order_id = raw.order_id;
-        }
-        // Even if raw priority is lower, we should still combine product names and images if they are different
-        if (raw.product_name) {
-          const existingNames = (existing.product_name || '').split(';').map(n => n.trim()).filter(Boolean);
-          const rawNames = (raw.product_name || '').split(';').map(n => n.trim()).filter(Boolean);
-          const combinedNames = Array.from(new Set([...existingNames, ...rawNames]));
-          existing.product_name = combinedNames.join('; ');
-        }
-        if (raw.product_image_url) {
-          const existingImgs = (existing.product_image_url || '').split(';').map(u => u.trim()).filter(Boolean);
-          const rawImgs = (raw.product_image_url || '').split(';').map(u => u.trim()).filter(Boolean);
-          const combinedImgs = Array.from(new Set([...existingImgs, ...rawImgs]));
-          existing.product_image_url = combinedImgs.join('; ');
-        }
-      }
-    } else {
-      mergedRaw.push({ ...raw });
-    }
-  });
+  // Emails are events; only exact marketplace order IDs can link them.
+  const mergedRaw = correlateGmailOrderEvents(rawList);
 
   mergedRaw.forEach((raw) => {
-    const orderId = raw.order_id && isRealOrderId(raw.order_id) ? raw.order_id : raw.gmail_message_id;
+    const orderId = isStableMarketplaceOrderId(raw.platform, raw.order_id) ? `${raw.platform.toLowerCase()}:${raw.order_id}` : `email:${raw.gmail_message_id}`
     const trackingNumber = raw.order_id && !raw.order_id.startsWith('MISSING-') && !raw.order_id.startsWith('GML-') && !raw.order_id.startsWith('TRK-')
       ? raw.order_id
       : `TRK-${raw.gmail_message_id.slice(-8).toUpperCase()}`;
@@ -200,7 +129,7 @@ export const mapGmailRawToDomain = (
       warrantyDurationMonths: raw.warranty_months,
       warrantyExpiryDate: raw.warranty_expiry,
       warrantyStatus: raw.warranty_months ? 'active' : 'none',
-      serialNumber: raw.warranty_months ? `W-${raw.gmail_message_id.slice(-8).toUpperCase()}` : null,
+      serialNumber: null,
       productUrl: getWebProductUrl(raw.platform, items[0]?.name || raw.product_name, raw.product_url, raw.order_id),
       invoiceUrl: raw.invoice_url || null,
     };
@@ -211,9 +140,9 @@ export const mapGmailRawToDomain = (
     if (raw.warranty_months) {
       mappedWarranties.push({
         id: `W-${raw.gmail_message_id}`,
-        orderId: raw.gmail_message_id,
+        orderId,
         productName: raw.product_name,
-        serialNumber: `W-${raw.gmail_message_id.slice(-8).toUpperCase()}`,
+        serialNumber: '',
         purchaseDate: raw.delivery_date,
         durationMonths: raw.warranty_months,
         status: 'active',
@@ -228,15 +157,14 @@ export const mapGmailRawToDomain = (
         id: raw.return_id,
         orderId: raw.gmail_message_id,
         productName: raw.product_name,
-        returnReason: 'Performance not as expected or size fit issue',
-        details: 'Automatically synchronized from purchase return correspondence.',
+        returnReason: 'Not specified in email',
+        details: 'Return reference extracted from transactional email; reason not provided.'
         refundMethod: 'original_payment',
         status: raw.status === 'Refund Success' ? 'refunded' : 'shipped',
-        trackingNumber: `RET-${raw.gmail_message_id.slice(-8).toUpperCase()}`,
+        trackingNumber: '',
         dateCreated: raw.return_date || raw.delivery_date,
         history: [
-          { status: 'requested', title: 'Return Authorization Created', date: raw.delivery_date },
-          { status: 'shipped', title: 'Carrier Received Package', date: raw.delivery_date },
+          { status: 'requested', title: 'Return update received', date: raw.return_date || raw.email_received_at || '' },
         ],
         platform: raw.platform,
       });

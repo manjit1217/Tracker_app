@@ -1,5 +1,6 @@
 import { GmailOrderRaw } from '../data/gmailOrders';
 import { getWebProductUrl, extractProductUrlFromHtml } from './productUrl';
+import { extractAmazonEmail } from './amazonExtractor';
 
 interface GmailMessageSummary {
   id: string;
@@ -142,6 +143,7 @@ export const cleanRawProductName = (name: string, _platform?: string, _messageId
   else if (yourOrder?.[1]) clean = yourOrder[1].trim();
   clean = clean.replace(/^(Your (?:order|package) (?:is|has been) (?:shipped|delivered|confirmed|processed):|Order (?:Confirmed|Shipped|Delivered):|Refund (?:Initiated|Processed|Success):|Return (?:Requested|Received):|Delivery Confirmation:)\s*/i, '');
   clean = clean.replace(/\.?\s*Please share.*$/i, '').replace(/\.?\s*feedback.*/i, '').trim();
+  if (/^(what got you here|your amazon|amazon\.in|order update|delivery update|your order|order details|no subject)/i.test(clean)) return '';
   return clean.length > 100 ? clean.slice(0, 97) + '...' : clean;
 };
 
@@ -292,7 +294,8 @@ export const fetchGmailOrders = async (
       const subjectLower = subject.toLowerCase();
       const snippetLower = snippet.toLowerCase();
 
-      if (senderLower.includes('amazon') || subjectLower.includes('amazon') || snippetLower.includes('amazon')) {
+      const amazonEvidence = /amazon\.(?:in|com)/i.test(from) || /amazon\.(?:in|com)\/(?:dp|gp\/product)/i.test(htmlBody);
+      if (amazonEvidence || senderLower.includes('amazon') || subjectLower.includes('amazon')) {
         platform = 'Amazon';
       } else if (senderLower.includes('flipkart') || subjectLower.includes('flipkart') || snippetLower.includes('flipkart')) {
         platform = 'Flipkart';
@@ -316,17 +319,18 @@ export const fetchGmailOrders = async (
       }
 
       // Parse Order ID
-      let orderId: string | null = null;
-      // Match formats like 407-5855217-5876321 (Amazon) or OD123456789 (Flipkart) or just numbers
+      const amazonExtraction = platform === 'Amazon' ? extractAmazonEmail(htmlBody) : null;
+      let orderId: string | null = amazonExtraction?.orderId || null;
+      // Match marketplace-specific identifiers from normalized email text.
       const amazonOrderMatch = snippet.match(/\b\d{3}-\d{7}-\d{7}\b/) || subject.match(/\b\d{3}-\d{7}-\d{7}\b/);
       const flipkartOrderMatch = snippet.match(/\bOD\d{15,20}\b/i) || subject.match(/\bOD\d{15,20}\b/i);
       const generalOrderMatch = snippet.match(/(?:order|id|reference)\s*(?:no|num|number|#)?\s*[:#-]?\s*([a-zA-Z0-9-]+)/i);
 
-      if (amazonOrderMatch) {
+      if (!orderId && amazonOrderMatch) {
         orderId = amazonOrderMatch[0];
-      } else if (flipkartOrderMatch) {
+      } else if (!orderId && flipkartOrderMatch) {
         orderId = flipkartOrderMatch[0];
-      } else if (generalOrderMatch && generalOrderMatch[1]) {
+      } else if (!orderId && platform !== 'Amazon' && generalOrderMatch && generalOrderMatch[1]) {
         orderId = generalOrderMatch[1].trim();
       } else {
         orderId = null;
@@ -359,15 +363,22 @@ export const fetchGmailOrders = async (
       if (returnMatch) returnId = returnMatch[1];
 
       // Parse Price / Amount
-      let price: string | null = null;
-      const currencyMatch = snippet.match(/(?:₹|Rs\.?|INR)\s?(\d+(?:,\d{3})*(?:\.\d{2})?)/i) || 
-                            subject.match(/(?:₹|Rs\.?|INR)\s?(\d+(?:,\d{3})*(?:\.\d{2})?)/i);
-      if (currencyMatch) {
-        price = `₹${currencyMatch[1]}`;
+      let price: string | null = amazonExtraction?.orderTotal || null;
+      if (platform !== 'Amazon') {
+        const currencyMatch = snippet.match(/(?:₹|Rs\.?|INR)\s?(\d+(?:,\d{3})*(?:\.\d{2})?)/i) ||
+                              subject.match(/(?:₹|Rs\.?|INR)\s?(\d+(?:,\d{3})*(?:\.\d{2})?)/i);
+        if (currencyMatch) price = `₹${currencyMatch[1]}`;
       }
 
       // Product Name Extraction
       let productName = '';
+      let productImageUrl = '';
+      let productUrlFromAmazon = '';
+      if (platform === 'Amazon' && amazonExtraction) {
+        productName = amazonExtraction.productNames.join('; ');
+        productImageUrl = amazonExtraction.productImageUrls.join('; ');
+        productUrlFromAmazon = amazonExtraction.productUrls[0] || '';
+      }
 
       // 1. Flipkart / General subject formats:
       // e.g. "CROCS Unisex Clogs from your order has been shipped"
@@ -379,9 +390,9 @@ export const fetchGmailOrders = async (
         productName = fromOrderMatch[1].trim();
       } else if (yourOrderForMatch && yourOrderForMatch[1]) {
         productName = yourOrderForMatch[1].trim();
-      } else if (platform === 'Amazon') {
-        const itemMatch = subject.match(/(?:shipped|delivered|confirmed):\s*“?([^”"]+)”?/i);
-        if (itemMatch) productName = itemMatch[1];
+      } else if (platform === 'Amazon' && !productName) {
+        const itemMatch = subject.match(/(?:shipped|delivered|confirmed):\s*[“"]?([^”"]{12,120})[”"]?$/i);
+        if (itemMatch && !/^(your order|order update|delivery update|what got you here)/i.test(itemMatch[1])) productName = itemMatch[1].trim();
       } else if (platform === 'Myntra') {
         const itemMatch = subject.match(/(?:delivery confirmation|order update):\s*([^-]+)/i);
         if (itemMatch) productName = itemMatch[1];
@@ -392,12 +403,7 @@ export const fetchGmailOrders = async (
         productName = hasBeenShippedMatch[1].trim();
       }
       
-      if (productName === 'E-commerce Item' || !productName) {
-        // Try cleaning subject
-        productName = cleanRawProductName(subject, platform, msgSummary.id);
-      }
-
-      let productImageUrl = '';
+      if (!productName && platform !== 'Amazon') productName = cleanRawProductName(subject, platform, msgSummary.id);
       if (platform === 'Myntra' && htmlBody) {
         const parsedItems = parseMyntraHtml(htmlBody);
         if (parsedItems.length > 0) {
@@ -440,7 +446,7 @@ export const fetchGmailOrders = async (
 
       // Warranty details stay unknown unless explicitly present in the email.
 
-      const extractedUrl = htmlBody ? extractProductUrlFromHtml(htmlBody, platform, productName) : null;
+      const extractedUrl = productUrlFromAmazon || (htmlBody ? extractProductUrlFromHtml(htmlBody, platform, productName) : null);
       const resolvedProductUrl = getWebProductUrl(platform, productName, extractedUrl, orderId);
 
       parsedOrders.push({
@@ -464,6 +470,8 @@ export const fetchGmailOrders = async (
         delivery_date: deliveryDate,
         invoice_url: null,
         email_subject: subject,
+        email_received_at: message.internalDate ? new Date(Number(message.internalDate)).toISOString() : null,
+        event_type: status === 'Unknown' ? 'unknown' : status.toLowerCase().replace(/\s+/g, '_'),
       });
       
       addLog('SUCCESS', `Successfully parsed: ${productName} (${platform}) - Value: ${price}`);

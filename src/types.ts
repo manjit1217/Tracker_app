@@ -1,5 +1,22 @@
 export type OrderStatus = 'processing' | 'dispatched' | 'in_transit' | 'out_for_delivery' | 'delivered';
 
+export type OrderEventType = 'order_placed' | 'invoice_issued' | 'shipped' | 'out_for_delivery' | 'delivered' | 'return_requested' | 'returned' | 'refund_pending' | 'refund_completed' | 'unknown';
+
+/** Immutable evidence extracted from one source email. */
+export interface OrderEvent {
+  id: string;
+  userId: string;
+  platform: string;
+  orderId: string | null;
+  gmailMessageId: string;
+  gmailThreadId?: string | null;
+  eventType: OrderEventType;
+  eventAt: string | null;
+  receivedAt: string | null;
+  extractedFields: Record<string, unknown>;
+  confidence: number;
+}
+
 export interface OrderItem {
   id: string;
   name: string;
