@@ -39,6 +39,27 @@ describe('Amazon email field extraction', () => {
   });
 });
 
+describe('Amazon digest order correlation', () => {
+  it('preserves multiple order IDs carried by one Gmail message', () => {
+    const shared = {
+      gmail_message_id: 'same-message',
+      platform: 'Amazon',
+      status: 'Pending',
+      product_name: 'Product',
+    } as any;
+    const result = correlateGmailOrderEvents([
+      { ...shared, order_id: '404-4525516-9016340' },
+      { ...shared, order_id: '404-2453989-1047536' },
+      { ...shared, order_id: '404-4525516-9016340' },
+    ]);
+    assert.equal(result.length, 2);
+    assert.deepEqual(result.map(order => order.order_id), [
+      '404-4525516-9016340',
+      '404-2453989-1047536',
+    ]);
+  });
+});
+
 describe('marketplace order ID validation', () => {
   it('accepts known marketplace ID formats', () => {
     assert.equal(isStableMarketplaceOrderId('Amazon', '407-5855217-5876321'), true);
