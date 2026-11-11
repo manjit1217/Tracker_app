@@ -80,7 +80,17 @@ export const mapGmailRawToDomain = (
     const itemsRaw = (raw.product_name || '').split(';').map(itm => itm.trim()).filter(Boolean);
     const imageUrlsRaw = (raw.product_image_url || '').split(';').map(url => url.trim()).filter(Boolean);
 
-    const items = itemsRaw.map((itmName, idx) => {
+    const items = raw.products?.length ? raw.products.map((product, idx) => ({
+      id: `${raw.gmail_message_id}-item-${idx}`,
+      name: product.name,
+      quantity: product.quantity,
+      price: product.price ?? 0,
+      priceKnown: product.price !== null,
+      image: getProductEmoji(product.name),
+      imageUrl: product.imageUrl,
+      seller: product.seller,
+      deliveryEstimate: product.deliveryEstimate,
+    })) : itemsRaw.map((itmName, idx) => {
       const individualPrice = itemsRaw.length === 1 ? priceValue : 0;
       const itemImgUrl = imageUrlsRaw[idx] || null;
       return {
@@ -88,6 +98,7 @@ export const mapGmailRawToDomain = (
         name: itmName,
         quantity: 1,
         price: Math.round(individualPrice * 100) / 100,
+        priceKnown: itemsRaw.length === 1 && priceValue > 0,
         image: getProductEmoji(itmName),
         imageUrl: itemImgUrl,
       };
@@ -110,7 +121,7 @@ export const mapGmailRawToDomain = (
     const orderRecord: Order = {
       id: orderId,
       trackingNumber,
-      orderDate: raw.delivery_date,
+      orderDate: raw.order_date || raw.delivery_date,
       status,
       items,
       priceTotal: priceValue,
