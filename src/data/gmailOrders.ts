@@ -21,6 +21,8 @@ export interface GmailOrderRaw {
   email_subject: string;
   email_received_at?: string | null;
   event_type?: string;
+  order_date?: string | null;
+  products?: Array<{ name: string; imageUrl: string | null; quantity: number; price: number | null; seller: string | null; deliveryEstimate: string | null }>;
 }
 
 export const GMAIL_RAW_DATA: GmailOrderRaw[] = [
