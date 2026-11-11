@@ -1,84 +1,109 @@
+export interface AmazonOrderExtraction {
+  orderId: string;
+  productNames: string[];
+  productUrls: string[];
+  productImageUrls: string[];
+  itemTotal: string | null;
+  orderTotal: string | null;
+}
+
 export interface AmazonEmailExtraction {
   orderId: string | null;
   productNames: string[];
   productUrls: string[];
   productImageUrls: string[];
   orderTotal: string | null;
+  orders: AmazonOrderExtraction[];
 }
 
-/** Extract an Amazon order number from visible email text. */
 export function extractAmazonOrderId(value: string): string | null {
   return value.match(/\b\d{3}-\d{7}-\d{7}\b/)?.[0] ?? null;
 }
 
-/** Extract a labelled order total; never treat an arbitrary item price as the order total. */
 export function extractAmazonOrderTotal(value: string): string | null {
-  const match = value.match(
-    /(?:order total|grand total|total amount|amount charged|total for this order)\s*[:：]?\s*(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d{1,2})?)/i
-  );
+  const match = value.match(/(?:order total|grand total|total amount|amount charged|total for this order|total)\s*[:：]?\s*(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d{1,2})?)/i);
   return match ? '₹' + match[1].replace(/,/g, '') : null;
 }
 
 const normalizeText = (value: string): string =>
-  value.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  value.replace(/&nbsp;|&#160;/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/\u00a0/g, ' ').replace(/[\u200e\u200f\u202a-\u202e]/g, '')
+    .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
-const isUsefulProductName = (value: string): boolean => {
-  const name = normalizeText(value);
-  return name.length >= 8 &&
-    name.length <= 220 &&
-    !/^(amazon|your order|order details|view order|track package|delivery update|invoice|payment|shop now|learn more)$/i.test(name);
+const money = (value: string): string | null => {
+  const match = value.match(/(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d{1,2})?)/i);
+  return match ? '₹' + match[1].replace(/,/g, '') : null;
 };
 
-const getAsin = (href: string): string | null =>
-  href.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:[/?#]|$)/i)?.[1] ?? null;
+const decodeRedirect = (href: string): string => {
+  const match = href.match(/[?&]U=([^&]+)/i);
+  if (!match) return href;
+  try { return decodeURIComponent(match[1]); } catch { return href; }
+};
 
-export function extractAmazonEmail(html: string): AmazonEmailExtraction {
-  const result: AmazonEmailExtraction = {
-    orderId: null,
-    productNames: [],
-    productUrls: [],
-    productImageUrls: [],
-    orderTotal: null,
+const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
+
+export function extractAmazonEmail(html: string, plainText = ''): AmazonEmailExtraction {
+  const empty: AmazonEmailExtraction = {
+    orderId: null, productNames: [], productUrls: [], productImageUrls: [], orderTotal: null, orders: [],
   };
+  if (!html) return empty;
 
-  if (!html || typeof DOMParser === 'undefined') return result;
+  // Amazon groups each order's address, order number and item rows in a table body.
+  // Work per tbody so one digest email can correctly yield several independent orders.
+  const blocks = html.match(/<tbody\b[^>]*>[\s\S]*?<\/tbody>/gi) || [];
+  const orders: AmazonOrderExtraction[] = [];
+  for (const block of blocks) {
+    const orderId = extractAmazonOrderId(normalizeText(block));
+    if (!orderId) continue;
+    const names: string[] = [];
+    const urls: string[] = [];
+    const images: string[] = [];
 
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const text = normalizeText(doc.body?.innerText || doc.body?.textContent || '');
-  result.orderId = extractAmazonOrderId(text);
-  result.orderTotal = extractAmazonOrderTotal(text);
-
-  const seenAsins = new Set<string>();
-  for (const link of Array.from(doc.querySelectorAll<HTMLAnchorElement>('a[href]'))) {
-    const href = link.getAttribute('href') || '';
-    const asin = getAsin(href);
-    if (!asin || seenAsins.has(asin)) continue;
-    seenAsins.add(asin);
-
-    const image = link.querySelector('img') ||
-      link.parentElement?.querySelector('img') ||
-      link.parentElement?.parentElement?.querySelector('img');
-    const candidates = [
-      link.innerText || link.textContent || '',
-      image?.getAttribute('alt') || '',
-      link.parentElement?.innerText || '',
-      link.parentElement?.parentElement?.innerText || '',
-    ];
-    const name = candidates.map(normalizeText).find(isUsefulProductName);
-
-    if (name) result.productNames.push(name);
-    try {
-      const absoluteUrl = new URL(href, doc.baseURI).toString();
-      if (/^https?:$/.test(new URL(absoluteUrl).protocol)) result.productUrls.push(absoluteUrl);
-    } catch {
-      // Ignore malformed or non-web product links.
+    const imageTags = block.match(/<img\b[^>]*>/gi) || [];
+    for (const tag of imageTags) {
+      const alt = tag.match(/\balt=["']([^"']+)["']/i)?.[1] || '';
+      const src = tag.match(/\b(?:src|data-src)=["']([^"']+)["']/i)?.[1] || '';
+      const name = normalizeText(alt);
+      if (name.length >= 8 && !/^(amazon|your order|view order)$/i.test(name)) names.push(name);
+      if (/^https?:\/\//i.test(src)) images.push(src);
     }
-    const imageUrl = image?.getAttribute('src') || image?.getAttribute('data-src') || '';
-    if (/^https?:\/\//i.test(imageUrl)) result.productImageUrls.push(imageUrl);
+
+    const anchors = block.match(/<a\b[^>]*href=["'][^"']+["'][^>]*>/gi) || [];
+    for (const tag of anchors) {
+      const href = tag.match(/href=["']([^"']+)["']/i)?.[1] || '';
+      const target = decodeRedirect(href);
+      if (/^https?:\/\//i.test(target) && /\/(?:dp|gp\/product)\/[A-Z0-9]{10}/i.test(target)) urls.push(target);
+    }
+
+    const visible = normalizeText(block);
+    const itemTotal = money(visible);
+    const textBlock = plainText.split(/Order\s*#\s*/i).find(part => part.includes(orderId)) || '';
+    const followingText = textBlock.slice(textBlock.indexOf(orderId) + orderId.length);
+    const totalMatch = followingText.match(/[\s\S]*?\bTotal\s*(?:₹|Rs\.?|INR)?\s*([\d,]+(?:\.\d{1,2})?)\s*INR?/i);
+    const orderTotal = totalMatch ? '₹' + totalMatch[1].replace(/,/g, '') : null;
+
+    orders.push({
+      orderId,
+      productNames: unique(names),
+      productUrls: unique(urls),
+      productImageUrls: unique(images),
+      itemTotal,
+      orderTotal,
+    });
   }
 
-  result.productNames = Array.from(new Set(result.productNames));
-  result.productUrls = Array.from(new Set(result.productUrls));
-  result.productImageUrls = Array.from(new Set(result.productImageUrls));
-  return result;
+  // If the email uses a different layout, retain the previous single-order extraction
+  // rather than inventing an order or product from its subject.
+  const uniqueOrders = orders.filter((order, index) => orders.findIndex(item => item.orderId === order.orderId) === index);
+  const first = uniqueOrders[0];
+  return {
+    orderId: first?.orderId || extractAmazonOrderId(normalizeText(html)),
+    productNames: unique(uniqueOrders.flatMap(order => order.productNames)),
+    productUrls: unique(uniqueOrders.flatMap(order => order.productUrls)),
+    productImageUrls: unique(uniqueOrders.flatMap(order => order.productImageUrls)),
+    orderTotal: first?.orderTotal || null,
+    orders: uniqueOrders,
+  };
 }
