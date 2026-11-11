@@ -88,7 +88,7 @@ export function extractAmazonDeliveryEvidence(text: string, status: string) {
     isReturnable: nonReturnable ? false : explicitlyReturnable ? true : null,
     returnPolicyText: nonReturnable ? 'Email states this item is non-returnable.'
       : returnByDate ? 'Return deadline stated in the email.'
-      : returnWindow ? \`Email states a \${returnWindow[1]}-day return window.\` : null,
+      : returnWindow ? `Email states a \${returnWindow[1]}-day return window.` : null,
   };
 }
 
