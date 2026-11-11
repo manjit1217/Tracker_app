@@ -102,3 +102,14 @@ describe('marketplace order ID validation', () => {
     assert.equal(isStableMarketplaceOrderId('Unknown', 'ORDER123456'), false);
   });
 });
+
+
+describe('Amazon plain-text fallback extraction', () => {
+  it('extracts order IDs and totals when HTML is missing', () => {
+    const result = extractAmazonEmail('', 'Order # 404-4525516-9016340\\nPortronics 65W Ignis Fast Charging Powerbank\\nOrder Total: INR 2,028');
+    assert.equal(result.orders.length, 1);
+    assert.equal(result.orderId, '404-4525516-9016340');
+    assert.equal(result.orderTotal, '₹2028');
+    assert.ok(result.productNames.some(name => name.includes('Portronics')));
+  });
+});

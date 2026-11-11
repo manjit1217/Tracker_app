@@ -10,3 +10,20 @@ it('does not merge messages without a stable order ID',()=>{const r=correlateGma
 it('drops duplicate Gmail message IDs',()=>{const r=correlateGmailOrderEvents([event('m1','407-1234567-1234567','Wireless Keyboard'),event('m1','407-1234567-1234567','Wireless Keyboard','Delivered')]);assert.equal(r.length,1);assert.equal(r[0].status,'Pending');});
 it('does not promote generic subjects to product names',()=>{const r=correlateGmailOrderEvents([event('m1','407-1234567-1234567','WHAT GOT YOU HERE WON’T GET YOU THERE')]);assert.equal(r[0].product_name,'');});
 });
+
+it('preserves delivery and return evidence when a later refund event becomes canonical',()=>{
+  const placed = event('m1','407-1234567-1234567','Wireless Keyboard','Delivered');
+  placed.delivery_date='2026-11-10';
+  placed.expected_delivery_date='2026-11-08';
+  placed.return_by_date='2026-11-17';
+  placed.is_returnable=true;
+  placed.return_window_days=7;
+  const refund = event('m2','407-1234567-1234567','Wireless Keyboard','Pending Refund');
+  const result = correlateGmailOrderEvents([placed,refund]);
+  assert.equal(result.length,1);
+  assert.equal(result[0].status,'Pending Refund');
+  assert.equal(result[0].delivery_date,'2026-11-10');
+  assert.equal(result[0].return_by_date,'2026-11-17');
+  assert.equal(result[0].is_returnable,true);
+  assert.equal(result[0].return_window_days,7);
+});
