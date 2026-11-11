@@ -129,9 +129,22 @@ export function extractAmazonEmail(html: string, plainText = ''): AmazonEmailExt
   }
 
   if (orders.length === 0 && plainText) orders.push(...extractPlainTextOrders(plainText));
+  // Amazon digest HTML separates the order-number table from the product table.
+  // Enrich each HTML order with the matching plain-text item title and exact totals.
+  const plainOrders = extractPlainTextOrders(plainText);
+  const enrichedOrders = orders.map(order => {
+    const plainOrder = plainOrders.find(item => item.orderId === order.orderId);
+    if (!plainOrder) return order;
+    return {
+      ...order,
+      productNames: order.productNames.length ? order.productNames : plainOrder.productNames,
+      itemTotal: order.itemTotal || plainOrder.itemTotal,
+      orderTotal: plainOrder.orderTotal || order.orderTotal,
+    };
+  });
   // If the email uses a different layout, retain the previous single-order extraction
   // rather than inventing an order or product from its subject.
-  const uniqueOrders = orders.filter((order, index) => orders.findIndex(item => item.orderId === order.orderId) === index);
+  const uniqueOrders = enrichedOrders.filter((order, index) => enrichedOrders.findIndex(item => item.orderId === order.orderId) === index);
   const first = uniqueOrders[0];
   return {
     orderId: first?.orderId || extractAmazonOrderId(normalizeText(html)),
