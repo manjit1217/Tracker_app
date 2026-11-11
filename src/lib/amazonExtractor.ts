@@ -44,11 +44,22 @@ const decodeRedirect = (href: string): string => {
 
 const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
 
+function extractPlainTextOrders(plainText: string): AmazonOrderExtraction[] {
+  const matches = [...plainText.matchAll(/\\b\\d{3}-\\d{7}-\\d{7}\\b/g)];
+  return matches.map((match, index) => {
+    const start = (match.index || 0) + match[0].length;
+    const end = index + 1 < matches.length ? (matches[index + 1].index || plainText.length) : plainText.length;
+    const section = plainText.slice(start, end);
+    const candidates = section.split(/\\r?\\n|\\s{2,}/).map(normalizeText).filter(line => line.length >= 8 && line.length <= 220 && !/^(amazon|your order|order details|view order|track package|quantity|total|shipping|delivery|payment)/i.test(line) && !/(?:₹|Rs\\.?|INR)\\s*[\\d,]+/i.test(line));
+    const total = section.match(/(?:order total|grand total|total)\\s*[:：]?\\s*(?:₹|Rs\\.?|INR)?\\s*([\\d,]+(?:\\.\\d{1,2})?)/i);
+    return { orderId: match[0], productNames: unique(candidates).slice(0, 10), productUrls: [], productImageUrls: [], itemTotal: money(section), orderTotal: total ? '₹' + total[1].replace(/,/g, '') : null };
+  });
+}
 export function extractAmazonEmail(html: string, plainText = ''): AmazonEmailExtraction {
   const empty: AmazonEmailExtraction = {
     orderId: null, productNames: [], productUrls: [], productImageUrls: [], orderTotal: null, orders: [],
   };
-  if (!html) return empty;
+  if (!html) { const orders = extractPlainTextOrders(plainText); const first = orders[0]; return { ...empty, orderId: first?.orderId || null, productNames: unique(orders.flatMap(order => order.productNames)), orderTotal: first?.orderTotal || null, orders }; }
 
   // Amazon groups each order's address, order number and item rows in a table body.
   // Work per tbody so one digest email can correctly yield several independent orders.
@@ -94,6 +105,7 @@ export function extractAmazonEmail(html: string, plainText = ''): AmazonEmailExt
     });
   }
 
+  if (orders.length === 0 && plainText) orders.push(...extractPlainTextOrders(plainText));
   // If the email uses a different layout, retain the previous single-order extraction
   // rather than inventing an order or product from its subject.
   const uniqueOrders = orders.filter((order, index) => orders.findIndex(item => item.orderId === order.orderId) === index);
