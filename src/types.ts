@@ -51,6 +51,8 @@ export interface Order {
   priceTotal: number;
   shippingAddress: string;
   estimatedArrival: string;
+  actualDeliveryDate?: string | null;
+  returnPolicyText?: string | null;
   courierName: string;
   courierPhone: string;
   history: StatusHistory[];
