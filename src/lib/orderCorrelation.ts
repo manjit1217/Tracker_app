@@ -32,7 +32,7 @@ const cleanNames = (value: string): string[] =>
     .filter(item =>
       item.length >= 8 &&
       item.length <= 220 &&
-      !/^(amazon|your order|order details|view order|track package|delivery update|invoice|payment|what got you here\\b.*)$/i.test(item)
+      !/^(amazon|your order|order details|view order|track package|delivery update|invoice|payment|what got you here\b.*)$/i.test(item)
     );
 
 /** Correlate lifecycle emails only when a marketplace-specific order ID is valid. */
