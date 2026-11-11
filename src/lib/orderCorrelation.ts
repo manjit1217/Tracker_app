@@ -1,3 +1,4 @@
+import { isPlausibleProductName } from './productNameValidation';
 import { GmailOrderRaw } from '../data/gmailOrders';
 
 const statusPriority = (status: string): number => {
@@ -29,9 +30,7 @@ export const isStableMarketplaceOrderId = (
 const cleanNames = (value: string): string[] =>
   value.split(';')
     .map(item => item.replace(/\s+/g, ' ').trim())
-    .filter(item =>
-      item.length >= 8 &&
-      item.length <= 220 &&
+    .filter(item => isPlausibleProductName(item) &&
       !/^(amazon|your order|order details|view order|track package|delivery update|invoice|payment|what got you here\b.*)$/i.test(item)
     );
 
