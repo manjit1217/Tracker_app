@@ -324,14 +324,14 @@ export const fetchGmailOrders = async (
       // Match marketplace-specific identifiers from normalized email text.
       const amazonOrderMatch = snippet.match(/\b\d{3}-\d{7}-\d{7}\b/) || subject.match(/\b\d{3}-\d{7}-\d{7}\b/);
       const flipkartOrderMatch = snippet.match(/\bOD\d{15,20}\b/i) || subject.match(/\bOD\d{15,20}\b/i);
-      const generalOrderMatch = snippet.match(/(?:order|id|reference)\s*(?:no|num|number|#)?\s*[:#-]?\s*([a-zA-Z0-9-]+)/i);
+      const ajioOrderMatch = snippet.match(/\bFN\d{8,}\b/i) || subject.match(/\bFN\d{8,}\b/i);
 
       if (!orderId && amazonOrderMatch) {
         orderId = amazonOrderMatch[0];
       } else if (!orderId && flipkartOrderMatch) {
         orderId = flipkartOrderMatch[0];
-      } else if (!orderId && platform !== 'Amazon' && generalOrderMatch && generalOrderMatch[1]) {
-        orderId = generalOrderMatch[1].trim();
+      } else if (!orderId && platform === 'AJIO' && ajioOrderMatch) {
+        orderId = ajioOrderMatch[0];
       } else {
         orderId = null;
       }
@@ -424,11 +424,7 @@ export const fetchGmailOrders = async (
         }
       }
 
-      if (!productImageUrl) {
-        productImageUrl = getProductImageByKeyword(productName);
-      }
-
-      // Determine return policy details based on platform
+      // Do not substitute stock images for missing source images.\n\n      // Determine return policy details based on platform
       let isReturnable: boolean | null = null;
       let returnWindowDays: number | null = null;
 
