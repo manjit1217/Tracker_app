@@ -80,7 +80,7 @@ function extractDateAfter(text: string, labels: RegExp): string | null {
   return normalizeEmailDate(match?.[1]);
 }
 
-function extractAmazonDeliveryEvidence(text: string, status: string) {
+export function extractAmazonDeliveryEvidence(text: string, status: string) {
   const actualDeliveryDate = status === 'Delivered' ? extractDateAfter(text, /delivered(?:\s+on)?|delivery date/) : null;
   const expectedDeliveryDate = status !== 'Delivered' ? extractDateAfter(text, /expected delivery(?: date)?|arriving(?: on)?|delivery by|will be delivered/) : null;
   const returnByDate = extractDateAfter(text, /return(?: or replacement)?(?: eligible)? until|return by|eligible for return until|return window ends/);
