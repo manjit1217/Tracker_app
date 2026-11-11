@@ -90,20 +90,34 @@ export default function GmailSyncManager({
   }, []);
 
   const handleGoogleSignIn = async () => {
+    setAuthError('');
     setIsLoggingIn(true);
     try {
       const result = await googleSignIn();
-      if (result) {
-        setCurrentUser(result.user);
-        setAccessTokenState(result.accessToken);
-        setTestReminderLogs(prev => [`[${new Date().toLocaleTimeString()}] SUCCESS: Google Account authorized: ${result.user.email}`, ...prev]);
-        setShowAuthModal(false);
-        // Automatically trigger sync on successful sign-in
-        await startSyncWithToken(result.accessToken);
-        return result;
+      if (!result) {
+        setAuthError('Google sign-in did not return an access token. Please try again.');
+        return null;
       }
+      setCurrentUser(result.user);
+      setAccessTokenState(result.accessToken);
+      setTestReminderLogs(prev => [`[${new Date().toLocaleTimeString()}] SUCCESS: Google Account authorized: ${result.user.email}`, ...prev]);
+      setShowAuthModal(false);
+      await startSyncWithToken(result.accessToken);
+      return result;
     } catch (err: any) {
-      setTestReminderLogs(prev => [`[${new Date().toLocaleTimeString()}] ERROR: Authentication failed: ${err.message || err}`, ...prev]);
+      const code = String(err?.code || '');
+      let message = err?.message || 'Google sign-in failed.';
+      if (code === 'auth/unauthorized-domain') {
+        message = 'This website is not an authorized Firebase Authentication domain. Add tracker-app-pi-ten.vercel.app under Firebase Console → Authentication → Settings → Authorized domains.';
+      } else if (code === 'auth/popup-blocked') {
+        message = 'Your browser blocked the Google sign-in popup. Allow popups for this website, then retry.';
+      } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        message = 'Google sign-in was cancelled. Please try again and complete the popup.';
+      } else if (code === 'auth/operation-not-allowed') {
+        message = 'Google sign-in is not enabled in Firebase Authentication. Enable the Google provider in Firebase Console.';
+      }
+      setAuthError(message);
+      setTestReminderLogs(prev => [`[${new Date().toLocaleTimeString()}] ERROR: Authentication failed: ${code} ${message}`, ...prev]);
     } finally {
       setIsLoggingIn(false);
     }
