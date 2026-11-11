@@ -39,13 +39,17 @@ const cleanNames = (value: string): string[] =>
 export const correlateGmailOrderEvents = (events: GmailOrderRaw[]): GmailOrderRaw[] => {
   const orders: GmailOrderRaw[] = [];
   const indexByKey = new Map<string, number>();
-  const seenMessages = new Set<string>();
+  const seenMessageOrders = new Set<string>();
 
   for (const event of events) {
-    if (event.gmail_message_id && seenMessages.has(event.gmail_message_id)) continue;
-    if (event.gmail_message_id) seenMessages.add(event.gmail_message_id);
-
     const stable = isStableMarketplaceOrderId(event.platform, event.order_id);
+    // A single Amazon digest can contain several distinct order IDs. Deduplicate
+    // repeated copies of the same message/order pair, not the entire message.
+    const messageKey = event.gmail_message_id
+      ? `${event.gmail_message_id}:${stable ? `${event.platform.toLowerCase()}:${event.order_id!.trim()}` : 'no-stable-order'}`
+      : '';
+    if (messageKey && seenMessageOrders.has(messageKey)) continue;
+    if (messageKey) seenMessageOrders.add(messageKey);
     const key = stable ? `${event.platform.toLowerCase()}:${event.order_id!.trim()}` : '';
     const index = key ? indexByKey.get(key) : undefined;
 
