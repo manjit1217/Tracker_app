@@ -308,9 +308,15 @@ export const getProductImageByKeyword = (name: string): string => {
   return 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=300&q=80';
 };
 
+export interface GmailFetchOptions {
+  query?: string;
+  maxResults?: number;
+}
+
 export const fetchGmailOrders = async (
   accessToken: string,
-  logCallback: (log: SyncDiagnosticLog) => void
+  logCallback: (log: SyncDiagnosticLog) => void,
+  options: GmailFetchOptions = {}
 ): Promise<GmailOrderRaw[]> => {
   const addLog = (level: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR', message: string) => {
     logCallback({
@@ -326,12 +332,12 @@ export const fetchGmailOrders = async (
 
   try {
     // 1. Search for orders, confirmation, delivery, return, refund emails
-    const query = 'newer_than:365d {order confirmation shipped delivered return refund purchase}';
+    const query = options.query?.trim() || 'newer_than:365d {order confirmation shipped delivered return refund purchase}';
     addLog('INFO', `Searching user inbox with filter: [${query}]`);
     
     const messages: GmailMessageSummary[] = [];
     let pageToken: string | undefined;
-    const maxResults = 1000;
+    const maxResults = Math.min(Math.max(Math.floor(options.maxResults || 500), 1), 5000);
     do {
       const params = new URLSearchParams({ q: query, maxResults: '500' });
       if (pageToken) params.set('pageToken', pageToken);
