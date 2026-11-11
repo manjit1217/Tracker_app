@@ -133,113 +133,16 @@ export function parseMyntraHtml(htmlContent: string): ParsedMyntraItem[] {
 }
 
 // Simple cleaner for product name to make it look professional
-export const cleanRawProductName = (name: string, platform?: string, messageId?: string): string => {
-  if (!name) return 'Product Item';
-  let clean = name.replace(/[\"“”']/g, '').trim();
-
-  // Strip patterns like "<Item> from your order has been shipped/delivered"
-  const fromOrderMatch = clean.match(/^(.+?)\s+from your order has been (?:shipped|delivered|dispatched|cancelled)/i);
-  if (fromOrderMatch && fromOrderMatch[1]) {
-    clean = fromOrderMatch[1].trim();
-  }
-
-  // Strip patterns like "Your order for <Item> has been shipped/delivered"
-  const yourOrderForMatch = clean.match(/^Your order for\s+(.+?)\s+has been (?:shipped|delivered|dispatched|confirmed)/i);
-  if (yourOrderForMatch && yourOrderForMatch[1]) {
-    clean = yourOrderForMatch[1].trim();
-  }
-
-  // Strip common prefix boilerplate
+export const cleanRawProductName = (name: string, _platform?: string, _messageId?: string): string => {
+  if (!name) return '';
+  let clean = name.replace(/[\"“”']/g, '').replace(/\s+/g, ' ').trim();
+  const fromOrder = clean.match(/^(.+?)\s+from your order has been (?:shipped|delivered|dispatched|cancelled)/i);
+  const yourOrder = clean.match(/^Your order for\s+(.+?)\s+has been (?:shipped|delivered|dispatched|confirmed)/i);
+  if (fromOrder?.[1]) clean = fromOrder[1].trim();
+  else if (yourOrder?.[1]) clean = yourOrder[1].trim();
   clean = clean.replace(/^(Your (?:order|package) (?:is|has been) (?:shipped|delivered|confirmed|processed):|Order (?:Confirmed|Shipped|Delivered):|Refund (?:Initiated|Processed|Success):|Return (?:Requested|Received):|Delivery Confirmation:)\s*/i, '');
-  clean = clean.replace(/\.?\s*Please share.*$/i, '');
-  clean = clean.replace(/\.?\s*feedback.*/i, '');
-  clean = clean.trim();
-
-  const lower = clean.toLowerCase();
-
-  // If the string contains a real product keyword (crocs, clogs, shoes, shirt, jeans, earbuds, etc.), preserve it directly
-  const hasRecognizedProduct = 
-    lower.includes('croc') || 
-    lower.includes('clog') || 
-    lower.includes('shirt') || 
-    lower.includes('jeans') || 
-    lower.includes('top') || 
-    lower.includes('skirt') || 
-    lower.includes('watch') || 
-    lower.includes('sneaker') || 
-    lower.includes('shoe') || 
-    lower.includes('bulb') || 
-    lower.includes('vacuum') || 
-    lower.includes('straw') || 
-    lower.includes('tape') || 
-    lower.includes('wheel') || 
-    lower.includes('buds') || 
-    lower.includes('earphone') || 
-    lower.includes('smartwatch') || 
-    lower.includes('charger') ||
-    lower.includes('powerbank');
-
-  if (hasRecognizedProduct) {
-    return clean.length > 50 ? clean.substring(0, 50) + '...' : clean;
-  }
-
-  // Only fall back to dummy items if this string is completely a generic status message
-  const isPurelyGenericStatus = 
-    lower.includes('order confirmation') || 
-    lower.includes('delivery confirmation') || 
-    lower.includes('order item') ||
-    lower === 'shipped' ||
-    lower === 'delivered' ||
-    lower === 'shipped order' ||
-    lower === 'delivered order' ||
-    lower.includes('return request processed');
-
-  if (isPurelyGenericStatus) {
-    const platLower = (platform || '').toLowerCase();
-    const seed = messageId || clean;
-    let hash = 0;
-    for (let i = 0; i < seed.length; i++) {
-      hash = seed.charCodeAt(i) + ((hash << 5) - hash);
-      hash |= 0;
-    }
-    const index = Math.abs(hash);
-
-    if (platLower.includes('myntra')) {
-      const options = [
-        'Vero Moda - Women Floral Printed Casual Shirt',
-        'Chemistry - Women Premium Tailored Fit Opaque Formal Green Shirt',
-        'Levis - Women\'s Textured Blue Crew Neck Top',
-        'Levis - Women\'s Solid Slim Fit Pink T-Shirt'
-      ];
-      return options[index % options.length];
-    } else if (platLower.includes('flipkart')) {
-      const options = [
-        'Realme Buds T110 Wireless Earphones',
-        'Noise ColorFit Pulse 2 Smartwatch',
-        'Mi Power Bank 3i 10000mAh Powerbank',
-        'OnePlus Nord Buds 2 True Wireless'
-      ];
-      return options[index % options.length];
-    } else if (platLower.includes('amazon')) {
-      const options = [
-        'Boat Airdopes 131 Wireless Earbuds',
-        'Wipro 9W Bluetooth Smart LED Bulb',
-        'Scotch 3M Double Sided Mounting Tape',
-        'SanDisk Ultra 64GB MicroSDXC Card'
-      ];
-      return options[index % options.length];
-    } else if (platLower.includes('ajio')) {
-      const options = [
-        'GAP Unisex Graphic Print Hooded Sweatshirt',
-        'Marks & Spencer Tailored Fit Linen Shirt',
-        'Puma Classic Suede Low-Top Sneakers',
-        'US Polo Association Solid Pique Polo'
-      ];
-      return options[index % options.length];
-    }
-  }
-
-  return clean.length > 50 ? clean.substring(0, 50) + '...' : clean;
+  clean = clean.replace(/\.?\s*Please share.*$/i, '').replace(/\.?\s*feedback.*/i, '').trim();
+  return clean.length > 100 ? clean.slice(0, 97) + '...' : clean;
 };
 
 // Map product title to a high-quality, professional, free CDN photo based on keyword categories
@@ -304,8 +207,7 @@ export const getProductImageByKeyword = (name: string): string => {
     return 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?auto=format&fit=crop&w=300&q=80';
   }
 
-  // Fallback to high-quality tech accessory/packaging box photo
-  return 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=300&q=80';
+  return '';
 };
 
 export interface GmailFetchOptions {
@@ -392,19 +294,17 @@ export const fetchGmailOrders = async (
 
       if (senderLower.includes('amazon') || subjectLower.includes('amazon') || snippetLower.includes('amazon')) {
         platform = 'Amazon';
-      } else if (senderLower.includes('flipkart') || subjectLower.includes('flipkart') || snippetLower.includes('flipkart') || subjectLower.includes('from your order has been')) {
+      } else if (senderLower.includes('flipkart') || subjectLower.includes('flipkart') || snippetLower.includes('flipkart')) {
         platform = 'Flipkart';
       } else if (senderLower.includes('myntra') || subjectLower.includes('myntra') || snippetLower.includes('myntra')) {
         platform = 'Myntra';
       } else if (senderLower.includes('ajio') || subjectLower.includes('ajio') || snippetLower.includes('ajio')) {
         platform = 'AJIO';
-      } else {
-        // Fallback to domain name if possible
-        const domainMatch = from.match(/@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-        if (domainMatch && domainMatch[1]) {
-          const mainDomain = domainMatch[1].split('.')[0];
-          platform = mainDomain.charAt(0).toUpperCase() + mainDomain.slice(1);
-        }
+      }
+
+      if (platform === 'Unknown') {
+        addLog('INFO', `Skipping unsupported sender: ${from || 'unknown sender'}`);
+        continue;
       }
 
       // Parse Date
@@ -467,7 +367,7 @@ export const fetchGmailOrders = async (
       }
 
       // Product Name Extraction
-      let productName = 'E-commerce Item';
+      let productName = '';
 
       // 1. Flipkart / General subject formats:
       // e.g. "CROCS Unisex Clogs from your order has been shipped"

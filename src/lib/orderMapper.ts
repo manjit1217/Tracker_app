@@ -152,7 +152,7 @@ export const mapGmailRawToDomain = (
     const imageUrlsRaw = (raw.product_image_url || '').split(';').map(url => url.trim()).filter(Boolean);
 
     const items = itemsRaw.map((itmName, idx) => {
-      const individualPrice = priceValue / itemsRaw.length;
+      const individualPrice = itemsRaw.length === 1 ? priceValue : 0;
       const itemImgUrl = imageUrlsRaw[idx] || null;
       return {
         id: `${raw.gmail_message_id}-item-${idx}`,
@@ -168,56 +168,15 @@ export const mapGmailRawToDomain = (
     const returnStatus = raw.status === 'Refund Success' ? 'refunded' : 
                          raw.status === 'Returned' ? 'received' : 'not_returned';
 
-    // Timeline history
-    const history = [
-      {
-        status: 'processing',
-        title: 'Order Confirmation Received',
-        description: `Payment confirmation received via ${raw.platform} transactional gateways.`,
-        timestamp: `${raw.delivery_date} • 10:15 AM`,
-        completed: true,
-      },
-    ];
-
-    if (['dispatched', 'in_transit', 'out_for_delivery', 'delivered'].includes(status)) {
-      history.push({
-        status: 'dispatched',
-        title: 'Dispatched from hub',
-        description: `Parcel has departed from ${raw.platform} local distribution terminal.`,
-        timestamp: `${raw.delivery_date} • 03:40 PM`,
-        completed: true,
-      });
-    }
-
-    if (['in_transit', 'out_for_delivery', 'delivered'].includes(status)) {
-      history.push({
-        status: 'in_transit',
-        title: 'In Transit',
-        description: 'Landed at local city logistics sorting center.',
-        timestamp: `${raw.delivery_date} • 11:22 PM`,
-        completed: true,
-      });
-    }
-
-    if (['out_for_delivery', 'delivered'].includes(status)) {
-      history.push({
-        status: 'out_for_delivery',
-        title: 'Out for Delivery Run',
-        description: `Delivery associate loaded parcel into local courier van.`,
-        timestamp: `${raw.delivery_date} • 08:30 AM`,
-        completed: true,
-      });
-    }
-
-    if (status === 'delivered') {
-      history.push({
-        status: 'delivered',
-        title: 'Package Fully Delivered',
-        description: `Scanned and released at customer doorstep. Signed by MP.`,
-        timestamp: `${raw.delivery_date} • 01:15 PM`,
-        completed: true,
-      });
-    }
+    // Keep only the status actually supported by the source email. Do not
+    // manufacture courier scans or timestamps that were not present in Gmail.
+    const history = [{
+      status,
+      title: raw.status === 'Unknown' ? 'Order email received' : raw.status,
+      description: `Status extracted from ${raw.platform} transactional email.`,
+      timestamp: raw.delivery_date || '',
+      completed: true,
+    }];
 
     const orderRecord: Order = {
       id: orderId,
@@ -226,18 +185,15 @@ export const mapGmailRawToDomain = (
       status,
       items,
       priceTotal: priceValue,
-      shippingAddress: 'Home Delivery (Synchronized with Gmail User Profile)',
-      estimatedArrival: raw.delivery_date,
-      courierName: raw.platform === 'Amazon' ? 'Amazon Logistics' : 
-                   raw.platform === 'Flipkart' ? 'Ekart Logistics' :
-                   raw.platform === 'Myntra' ? 'Ecom Express' : 
-                   raw.platform === 'AJIO' ? 'Bluedart Limited' : 'Delhivery Node',
+      shippingAddress: 'Not provided by email',
+      estimatedArrival: '',
+      courierName: 'Not provided by email',
       courierPhone: '',
       history,
       platform: raw.platform,
-      returnEligible: raw.is_returnable || false,
+      returnEligible: raw.is_returnable ?? undefined,
       returnDeadline: raw.return_by_date,
-      returnStatus,
+      returnStatus: raw.status === 'Pending Refund' ? 'initiated' : returnStatus,
       refundAmount: raw.status === 'Refund Success' ? priceValue : null,
       refundDate: raw.status === 'Refund Success' ? raw.delivery_date : null,
       refundStatus: raw.status === 'Refund Success' ? 'completed' : 'none',
@@ -247,10 +203,6 @@ export const mapGmailRawToDomain = (
       serialNumber: raw.warranty_months ? `W-${raw.gmail_message_id.slice(-8).toUpperCase()}` : null,
       productUrl: getWebProductUrl(raw.platform, items[0]?.name || raw.product_name, raw.product_url, raw.order_id),
       invoiceUrl: raw.invoice_url || null,
-      // Simple coordinate helpers for the delivery map simulation
-      courierX: 100,
-      currentKmLeft: 0,
-      minutesLeft: 0,
     };
 
     mappedOrders.push(orderRecord);
