@@ -46,28 +46,28 @@ const decodeRedirect = (href: string): string => {
 const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
 
 function extractPlainTextOrders(plainText: string): AmazonOrderExtraction[] {
-  const matches = [...plainText.matchAll(/\\b\\d{3}-\\d{7}-\\d{7}\\b/g)];
+  const matches = [...plainText.matchAll(/\b\d{3}-\d{7}-\d{7}\b/g)];
   return matches.map((match, index) => {
     const start = (match.index || 0) + match[0].length;
     const end = index + 1 < matches.length ? (matches[index + 1].index || plainText.length) : plainText.length;
     const section = plainText.slice(start, end);
-    const lines = section.split(/\\r?\\n/).map(line => line.trim());
+    const lines = section.split(/\r?\n/).map(line => line.trim());
     const names: string[] = [];
 
     // Amazon digest emails mark each product with "*". Product titles can wrap
     // over several physical lines, so collect through the Quantity line.
     for (let i = 0; i < lines.length; i++) {
-      if (!/^\\*\\s*/.test(lines[i])) continue;
-      const titleParts = [lines[i].replace(/^\\*\\s*/, '')];
-      for (let j = i + 1; j < lines.length && !/^Quantity\\s*:/i.test(lines[j]); j++) {
+      if (!/^\*\s*/.test(lines[i])) continue;
+      const titleParts = [lines[i].replace(/^\*\s*/, '')];
+      for (let j = i + 1; j < lines.length && !/^Quantity\s*:/i.test(lines[j]); j++) {
         if (lines[j] && !/^(?:Total|Order #|View or edit order)/i.test(lines[j])) titleParts.push(lines[j]);
       }
       const title = normalizeText(titleParts.join(' '));
       if (isPlausibleProductName(title)) names.push(title);
     }
 
-    const quantityPrice = section.match(/Quantity\\s*:\\s*\\d+\\s*(?:₹|Rs\\.?|INR)?\\s*([\\d,]+(?:\\.\\d{1,2})?)\\s*(?:INR)?/i);
-    const total = section.match(/\\bTotal\\s*(?:₹|Rs\\.?|INR)?\\s*([\\d,]+(?:\\.\\d{1,2})?)\\s*INR?/i);
+    const quantityPrice = section.match(/Quantity\s*:\s*\d+\s*(?:₹|Rs\.?|INR)?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:INR)?/i);
+    const total = section.match(/\bTotal\s*(?:₹|Rs\.?|INR)?\s*([\d,]+(?:\.\d{1,2})?)\s*INR?/i);
     return {
       orderId: match[0],
       productNames: unique(names),
