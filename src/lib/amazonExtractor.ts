@@ -46,14 +46,36 @@ const decodeRedirect = (href: string): string => {
 const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
 
 function extractPlainTextOrders(plainText: string): AmazonOrderExtraction[] {
-  const matches = [...plainText.matchAll(/\b\d{3}-\d{7}-\d{7}\b/g)];
+  const matches = [...plainText.matchAll(/\\b\\d{3}-\\d{7}-\\d{7}\\b/g)];
   return matches.map((match, index) => {
     const start = (match.index || 0) + match[0].length;
     const end = index + 1 < matches.length ? (matches[index + 1].index || plainText.length) : plainText.length;
     const section = plainText.slice(start, end);
-    const candidates = section.split(/\r?\n|\s{2,}/).map(normalizeText).filter(line => isPlausibleProductName(line) && !/^(amazon|your order|order details|view order|track package|quantity|total|shipping|delivery|payment)/i.test(line) && !/(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(line));
-    const total = section.match(/(?:order total|grand total|total)\s*[:：]?\s*(?:₹|Rs\.?|INR)?\s*([\d,]+(?:\.\d{1,2})?)/i);
-    return { orderId: match[0], productNames: unique(candidates).slice(0, 10), productUrls: [], productImageUrls: [], itemTotal: money(section), orderTotal: total ? '₹' + total[1].replace(/,/g, '') : null };
+    const lines = section.split(/\\r?\\n/).map(line => line.trim());
+    const names: string[] = [];
+
+    // Amazon digest emails mark each product with "*". Product titles can wrap
+    // over several physical lines, so collect through the Quantity line.
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^\\*\\s*/.test(lines[i])) continue;
+      const titleParts = [lines[i].replace(/^\\*\\s*/, '')];
+      for (let j = i + 1; j < lines.length && !/^Quantity\\s*:/i.test(lines[j]); j++) {
+        if (lines[j] && !/^(?:Total|Order #|View or edit order)/i.test(lines[j])) titleParts.push(lines[j]);
+      }
+      const title = normalizeText(titleParts.join(' '));
+      if (isPlausibleProductName(title)) names.push(title);
+    }
+
+    const quantityPrice = section.match(/Quantity\\s*:\\s*\\d+\\s*(?:₹|Rs\\.?|INR)?\\s*([\\d,]+(?:\\.\\d{1,2})?)\\s*(?:INR)?/i);
+    const total = section.match(/\\bTotal\\s*(?:₹|Rs\\.?|INR)?\\s*([\\d,]+(?:\\.\\d{1,2})?)\\s*INR?/i);
+    return {
+      orderId: match[0],
+      productNames: unique(names),
+      productUrls: [],
+      productImageUrls: [],
+      itemTotal: quantityPrice ? '₹' + quantityPrice[1].replace(/,/g, '') : null,
+      orderTotal: total ? '₹' + total[1].replace(/,/g, '') : null,
+    };
   });
 }
 export function extractAmazonEmail(html: string, plainText = ''): AmazonEmailExtraction {
@@ -107,9 +129,22 @@ export function extractAmazonEmail(html: string, plainText = ''): AmazonEmailExt
   }
 
   if (orders.length === 0 && plainText) orders.push(...extractPlainTextOrders(plainText));
+  // Amazon digest HTML separates the order-number table from the product table.
+  // Enrich each HTML order with the matching plain-text item title and exact totals.
+  const plainOrders = extractPlainTextOrders(plainText);
+  const enrichedOrders = orders.map(order => {
+    const plainOrder = plainOrders.find(item => item.orderId === order.orderId);
+    if (!plainOrder) return order;
+    return {
+      ...order,
+      productNames: order.productNames.length ? order.productNames : plainOrder.productNames,
+      itemTotal: order.itemTotal || plainOrder.itemTotal,
+      orderTotal: plainOrder.orderTotal || order.orderTotal,
+    };
+  });
   // If the email uses a different layout, retain the previous single-order extraction
   // rather than inventing an order or product from its subject.
-  const uniqueOrders = orders.filter((order, index) => orders.findIndex(item => item.orderId === order.orderId) === index);
+  const uniqueOrders = enrichedOrders.filter((order, index) => enrichedOrders.findIndex(item => item.orderId === order.orderId) === index);
   const first = uniqueOrders[0];
   return {
     orderId: first?.orderId || extractAmazonOrderId(normalizeText(html)),
