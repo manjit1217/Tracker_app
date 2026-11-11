@@ -46,17 +46,24 @@ function decodeBase64Html(data: string): string {
 
 function getEmailHtmlBody(payload: any): string {
   if (!payload) return '';
-  if (payload.mimeType === 'text/html' && payload.body?.data) {
-    return decodeBase64Html(payload.body.data);
-  }
+  if (payload.mimeType === 'text/html' && payload.body?.data) return decodeBase64Html(payload.body.data);
   if (payload.parts) {
     for (const part of payload.parts) {
       const body = getEmailHtmlBody(part);
       if (body) return body;
     }
   }
-  if (payload.mimeType === 'text/plain' && payload.body?.data) {
-    return decodeBase64Html(payload.body.data);
+  return '';
+}
+
+function getEmailTextBody(payload: any): string {
+  if (!payload) return '';
+  if (payload.mimeType === 'text/plain' && payload.body?.data) return decodeBase64Html(payload.body.data);
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      const body = getEmailTextBody(part);
+      if (body) return body;
+    }
   }
   return '';
 }
@@ -280,6 +287,7 @@ export const fetchGmailOrders = async (
       const message = await detailRes.json();
       const headers = message.payload?.headers || [];
       const htmlBody = getEmailHtmlBody(message.payload);
+      const plainTextBody = getEmailTextBody(message.payload);
       const snippet = [message.snippet || '', htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ') : ''].join(' ').replace(/\s+/g, ' ');
       
       const subject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || 'No Subject';
@@ -320,10 +328,11 @@ export const fetchGmailOrders = async (
       }
 
       // Parse Order ID
-      const amazonExtraction = platform === 'Amazon' ? extractAmazonEmail(htmlBody) : null;
+      const amazonExtraction = platform === 'Amazon' ? extractAmazonEmail(htmlBody, plainTextBody) : null;
       const flipkartExtraction = platform === 'Flipkart' && htmlBody ? extractFlipkartOrder(htmlBody) : null;
-      if (flipkartExtraction?.orderId) orderId = flipkartExtraction.orderId;
-      let orderId: string | null = amazonExtraction?.orderId || null;
+      let orderId: string | null = amazonExtraction?.orderId || flipkartExtraction?.orderId || null;
+      let productImageUrl = '';
+      let productUrlFromAmazon = '';
       // Match marketplace-specific identifiers from normalized email text.
       const amazonOrderMatch = snippet.match(/\b\d{3}-\d{7}-\d{7}\b/) || subject.match(/\b\d{3}-\d{7}-\d{7}\b/);
       const flipkartOrderMatch = snippet.match(/\bOD\d{15,20}\b/i) || subject.match(/\bOD\d{15,20}\b/i);
@@ -380,8 +389,6 @@ export const fetchGmailOrders = async (
         productImageUrl = flipkartExtraction.products.map(item => item.imageUrl || '').join('; ');
         if (flipkartExtraction.amountPaid !== null) price = `₹${flipkartExtraction.amountPaid.toFixed(2)}`;
       }
-      let productImageUrl = '';
-      let productUrlFromAmazon = '';
       if (platform === 'Amazon' && amazonExtraction) {
         productName = amazonExtraction.productNames.join('; ');
         productImageUrl = amazonExtraction.productImageUrls.join('; ');
@@ -455,7 +462,7 @@ export const fetchGmailOrders = async (
       const extractedUrl = productUrlFromAmazon || (htmlBody ? extractProductUrlFromHtml(htmlBody, platform, productName) : null);
       const resolvedProductUrl = getWebProductUrl(platform, productName, extractedUrl, orderId);
 
-      parsedOrders.push({
+      const baseOrder: GmailOrderRaw = {
         gmail_message_id: msgSummary.id,
         platform,
         order_id: orderId,
@@ -479,8 +486,27 @@ export const fetchGmailOrders = async (
         email_received_at: message.internalDate ? new Date(Number(message.internalDate)).toISOString() : null,
         order_date: flipkartExtraction?.orderDate || null,
         products: flipkartExtraction?.products,
-        event_type: status === 'Unknown' ? 'unknown' : status.toLowerCase().replace(/\s+/g, '_'),
-      });
+        event_type: status === 'Unknown' ? 'unknown' : status.toLowerCase().replace(/\\s+/g, '_'),
+      };
+
+      if (platform === 'Amazon' && amazonExtraction?.orders.length) {
+        for (const amazonOrder of amazonExtraction.orders) {
+          const name = amazonOrder.productNames.join('; ');
+          const image = amazonOrder.productImageUrls.join('; ');
+          const productUrl = amazonOrder.productUrls[0] || getWebProductUrl('Amazon', name, null, amazonOrder.orderId);
+          parsedOrders.push({
+            ...baseOrder,
+            order_id: amazonOrder.orderId,
+            product_name: name,
+            product_image_url: image,
+            product_url: productUrl,
+            price: amazonOrder.orderTotal || amazonOrder.itemTotal || null,
+          });
+          addLog('SUCCESS', `Parsed Amazon order ${amazonOrder.orderId}: ${name || 'product details unavailable'}`);
+        }
+      } else {
+        parsedOrders.push(baseOrder);
+      }
       
       addLog('SUCCESS', `Successfully parsed: ${productName} (${platform}) - Value: ${price}`);
     }
