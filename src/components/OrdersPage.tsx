@@ -696,10 +696,27 @@ export default function OrdersPage({
                           <span className="text-[10px] text-slate-400 font-mono uppercase">
                             QTY: <strong className="text-slate-600 font-bold">{item.quantity || 1}</strong>
                           </span>
-                          <span className="text-slate-300">•</span>
-                          <span className="text-[10px] text-slate-400 font-mono uppercase">
-                            Price: <strong className="text-slate-600 font-bold">₹{(item.price || 0).toLocaleString('en-IN')}</strong>
-                          </span>
+                          {item.priceKnown !== false && item.price > 0 && (
+                            <>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-[10px] text-slate-400 font-mono uppercase">
+                                Price: <strong className="text-slate-600 font-bold">₹{item.price.toLocaleString('en-IN')}</strong>
+                              </span>
+                            </>
+                          )}
+                          {item.seller && (
+                            <>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-[10px] text-slate-400 font-mono uppercase">
+                                Seller: <strong className="text-slate-600 font-bold">{item.seller}</strong>
+                              </span>
+                            </>
+                          )}
+                          {item.deliveryEstimate && (
+                            <span className="w-full text-[10px] text-slate-500 mt-1">
+                              Delivery estimate: {item.deliveryEstimate}
+                            </span>
+                          )}
                           {selectedOrder.category && (
                             <>
                               <span className="text-slate-300">•</span>
