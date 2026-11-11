@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractAmazonEmail, extractAmazonOrderId, extractAmazonOrderTotal } from './amazonExtractor';
-import { isStableMarketplaceOrderId } from './orderCorrelation';
+import { correlateGmailOrderEvents, isStableMarketplaceOrderId } from './orderCorrelation';
 
 describe('Amazon email field extraction', () => {
   it('extracts only a correctly formatted Amazon order ID', () => {
