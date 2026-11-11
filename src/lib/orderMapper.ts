@@ -158,7 +158,7 @@ export const mapGmailRawToDomain = (
         orderId: raw.gmail_message_id,
         productName: raw.product_name,
         returnReason: 'Not specified in email',
-        details: 'Return reference extracted from transactional email; reason not provided.'
+        details: 'Return reference extracted from transactional email; reason not provided.',
         refundMethod: 'original_payment',
         status: raw.status === 'Refund Success' ? 'refunded' : 'shipped',
         trackingNumber: '',
