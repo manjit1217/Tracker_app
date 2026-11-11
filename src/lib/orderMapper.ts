@@ -130,7 +130,9 @@ export const mapGmailRawToDomain = (
     let status: OrderStatus = 'processing';
     const emailLower = (raw.email_subject || '').toLowerCase();
     
-    if (raw.status === 'Out for Delivery') {
+    if (raw.status === 'Delivered' || raw.status === 'Returned' || raw.status === 'Refund Success') {
+      status = 'delivered';
+    } else if (raw.status === 'Out for Delivery') {
       status = 'out_for_delivery';
     } else if (raw.status === 'Shipped') {
       if (emailLower.includes('out for delivery') || emailLower.includes('out_for_delivery')) {

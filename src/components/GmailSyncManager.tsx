@@ -81,7 +81,12 @@ export default function GmailSyncManager({
         setAccessTokenState(token);
       },
       () => {
-        return () => unsubscribe();
+        setCurrentUser(null);
+        setAccessTokenState(null);
+      }
+    );
+
+    return () => unsubscribe();
   }, []);
 
   const handleGoogleSignIn = async () => {

@@ -367,9 +367,9 @@ export const fetchGmailOrders = async (
       }
 
       const message = await detailRes.json();
-      const snippet = [message.snippet || '', htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ') : ''].join(' ').replace(/\s+/g, ' ');
       const headers = message.payload?.headers || [];
       const htmlBody = getEmailHtmlBody(message.payload);
+      const snippet = [message.snippet || '', htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ') : ''].join(' ').replace(/\s+/g, ' ');
       
       const subject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || 'No Subject';
       const from = headers.find((h: any) => h.name.toLowerCase() === 'from')?.value || '';
@@ -403,14 +403,10 @@ export const fetchGmailOrders = async (
 
       // Parse Date
       let deliveryDate = '';
-      if (message.internalDate) {
-        const internalDate = new Date(Number(message.internalDate));
-        if (!isNaN(internalDate.getTime())) deliveryDate = internalDate.toISOString().split('T')[0];
-      } else if (dateHeader) {
-        const parsedDate = new Date(dateHeader);
-        if (!isNaN(parsedDate.getTime())) {
-          deliveryDate = parsedDate.toISOString().split('T')[0];
-        }
+      const explicitDeliveryDate = snippet.match(/(?:delivered|delivery date)\s*(?:on|:)?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})/i);
+      if (explicitDeliveryDate) {
+        const parsedDate = new Date(explicitDeliveryDate[1]);
+        if (!isNaN(parsedDate.getTime())) deliveryDate = parsedDate.toISOString().split('T')[0];
       }
 
       // Parse Order ID
@@ -430,24 +426,31 @@ export const fetchGmailOrders = async (
         orderId = null;
       }
 
-      // Parse Status
+      // Parse status from explicit transactional language; unknown emails remain unknown.
       let status = 'Unknown';
       let returnId: string | null = null;
       let returnDate: string | null = null;
+      const statusText = (subject + ' ' + snippet).toLowerCase();
 
-      if (subjectLower.includes('refund') || snippetLower.includes('refund')) {
+      if (/refund (?:has been )?(?:credited|completed|processed)|refund successful|refund success/.test(statusText)) {
+        status = 'Refund Success';
+      } else if (/refund initiated|refund pending|refund is being processed/.test(statusText)) {
         status = 'Pending Refund';
-        const returnMatch = snippet.match(/(?:return|refund)\s*(?:id|num|#)?\s*[:#-]?\s*([a-zA-Z0-9]+)/i);
-        if (returnMatch) returnId = returnMatch[1];
-      } else if (subjectLower.includes('return') || snippetLower.includes('return')) {
+      } else if (/return picked up|return received|item returned|returned successfully/.test(statusText)) {
+        status = 'Returned';
+      } else if (/return requested|return request (?:placed|created|received)|return initiated/.test(statusText)) {
         status = 'Return Requested';
-        const returnMatch = snippet.match(/(?:return|refund)\s*(?:id|num|#)?\s*[:#-]?\s*([a-zA-Z0-9]+)/i);
-        if (returnMatch) returnId = returnMatch[1];
-      } else if (subjectLower.includes('shipped') || snippetLower.includes('shipped') || snippetLower.includes('out for delivery') || subjectLower.includes('on its way')) {
+      } else if (/out for delivery|out-for-delivery/.test(statusText)) {
+        status = 'Out for Delivery';
+      } else if (/delivered|delivery completed|successfully delivered/.test(statusText)) {
+        status = 'Delivered';
+      } else if (/shipped|dispatched|in transit|on its way/.test(statusText)) {
         status = 'Shipped';
-      } else if (subjectLower.includes('confirm') || snippetLower.includes('confirm') || snippetLower.includes('placed') || subjectLower.includes('thank you for your order')) {
-        status = 'Pending'; // Confirmation does not prove delivery
+      } else if (/order (?:confirmed|placed)|thank you for your order|payment successful|order received/.test(statusText)) {
+        status = 'Pending';
       }
+      const returnMatch = snippet.match(/(?:return|refund)\s*(?:id|num|number|#)?\s*[:#-]?\s*([a-zA-Z0-9-]{5,})/i);
+      if (returnMatch) returnId = returnMatch[1];
 
       // Parse Price / Amount
       let price: string | null = null;
