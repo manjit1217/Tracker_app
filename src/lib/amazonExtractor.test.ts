@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractAmazonEmail, extractAmazonOrderId, extractAmazonOrderTotal } from './amazonExtractor';
 import { correlateGmailOrderEvents, isStableMarketplaceOrderId } from './orderCorrelation';
+import { extractAmazonDeliveryEvidence } from './gmailParser';
 
 describe('Amazon email field extraction', () => {
   it('extracts only a correctly formatted Amazon order ID', () => {
@@ -36,6 +37,34 @@ describe('Amazon email field extraction', () => {
     assert.equal(result.orders[0].productUrls[0], 'https://www.amazon.in/dp/B0ABCDE123');
     assert.equal(result.orders[1].orderId, '404-2453989-1047536');
     assert.equal(result.orders[1].orderTotal, '₹579');
+  });
+});
+
+describe('Amazon delivery and return evidence', () => {
+  it('extracts explicitly stated delivery, expected delivery and return dates', () => {
+    const delivered = extractAmazonDeliveryEvidence(
+      'Delivered on November 10, 2026. Return window ends November 17, 2026.',
+      'Delivered'
+    );
+    assert.equal(delivered.actualDeliveryDate, '2026-11-10');
+    assert.equal(delivered.returnByDate, '2026-11-17');
+    assert.equal(delivered.expectedDeliveryDate, null);
+  });
+
+  it('does not invent a return window when the email does not state one', () => {
+    const shipped = extractAmazonDeliveryEvidence(
+      'Expected delivery: November 12, 2026.',
+      'Shipped'
+    );
+    assert.equal(shipped.expectedDeliveryDate, '2026-11-12');
+    assert.equal(shipped.returnWindowDays, null);
+    assert.equal(shipped.returnByDate, null);
+    assert.equal(shipped.isReturnable, null);
+  });
+
+  it('recognizes an explicit non-returnable policy', () => {
+    const policy = extractAmazonDeliveryEvidence('This item is non-returnable.', 'Delivered');
+    assert.equal(policy.isReturnable, false);
   });
 });
 

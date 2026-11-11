@@ -745,6 +745,26 @@ export default function OrdersPage({
                 })}
               </div>
 
+              <div className="bg-white border border-slate-200 p-4 rounded-xl space-y-3">
+                <h4 className="text-[10px] font-bold text-slate-700 uppercase tracking-wider font-mono">Order status & delivery</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-[9px] text-slate-450 font-bold uppercase tracking-wider block font-mono">Current status</span>
+                    <span className="font-semibold text-slate-800 block mt-1">{selectedOrder.status.replace(/_/g, ' ')}</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-slate-450 font-bold uppercase tracking-wider block font-mono">Delivery</span>
+                    <span className="font-semibold text-slate-800 block mt-1">
+                      {selectedOrder.actualDeliveryDate
+                        ? `Delivered on ${new Date(selectedOrder.actualDeliveryDate).toLocaleDateString('en-IN', {day: 'numeric', month: 'long', year: 'numeric'})}`
+                        : selectedOrder.estimatedArrival
+                          ? `Expected ${new Date(selectedOrder.estimatedArrival).toLocaleDateString('en-IN', {day: 'numeric', month: 'long', year: 'numeric'})}`
+                          : 'Date not confirmed in email'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* RETURN DATE AND MANAGE RETURN DETAILS CARD */}
               <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-xl space-y-4">
                 <div className="flex items-center justify-between">
@@ -778,17 +798,24 @@ export default function OrdersPage({
                           <div>
                             <span className="text-[9px] text-slate-450 font-bold uppercase tracking-wider block font-mono">Return Eligibility</span>
                             <span className="font-semibold text-slate-800 block mt-0.5">
-                              {selectedOrder.returnEligible ? "✓ Eligible for 30-day window" : "✕ Return window closed or passed"}
+                              {selectedOrder.returnEligible === true
+                                ? 'Eligible according to email details'
+                                : selectedOrder.returnEligible === false
+                                  ? 'Not eligible according to email details'
+                                  : 'Eligibility not confirmed in email'}
                             </span>
                           </div>
 
                           <div>
                             <span className="text-[9px] text-slate-450 font-bold uppercase tracking-wider block font-mono">Deadline Date</span>
                             <span className="font-mono text-slate-800 block mt-0.5 font-bold">
-                              {selectedOrder.returnDeadline ? new Date(selectedOrder.returnDeadline).toLocaleDateString('en-IN', {day: 'numeric', month: 'long', year: 'numeric'}) : "No Deadline Set"}
+                              {selectedOrder.returnDeadline ? new Date(selectedOrder.returnDeadline).toLocaleDateString('en-IN', {day: 'numeric', month: 'long', year: 'numeric'}) : "No deadline stated in email"}
                             </span>
                           </div>
                         </div>
+                        {selectedOrder.returnPolicyText && (
+                          <p className="text-[10px] text-slate-500">{selectedOrder.returnPolicyText}</p>
+                        )}
 
                         {/* Edit manual Return Date form */}
                         <div className="pt-2 border-t border-slate-200 space-y-2">
