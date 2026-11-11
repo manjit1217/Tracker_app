@@ -29,13 +29,6 @@ const textFromHtml = (html: string): string => decodeHtml(
     .replace(/<[^>]+>/g, ' ')
 ).replace(/[\t\r\n ]+/g, ' ').trim();
 
-const amountFrom = (text: string): number | null => {
-  const match = text.match(/(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d{1,2})?)/i);
-  if (!match) return null;
-  const amount = Number(match[1].replace(/,/g, ''));
-  return Number.isFinite(amount) ? amount : null;
-};
-
 const normalizeDate = (value: string): string | null => {
   const parsed = new Date(value.replace(/\b(on|by)\b/i, '').trim());
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
