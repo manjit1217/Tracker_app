@@ -17,22 +17,22 @@ export interface AmazonEmailExtraction {
 }
 
 export function extractAmazonOrderId(value: string): string | null {
-  return value.match(/\\b\\d{3}-\\d{7}-\\d{7}\\b/)?.[0] ?? null;
+  return value.match(/\b\d{3}-\d{7}-\d{7}\b/)?.[0] ?? null;
 }
 
 export function extractAmazonOrderTotal(value: string): string | null {
-  const match = value.match(/(?:order total|grand total|total amount|amount charged|total for this order|total)\\s*[:：]?\\s*(?:₹|Rs\\.?|INR)\\s*([\\d,]+(?:\\.\\d{1,2})?)/i);
+  const match = value.match(/(?:order total|grand total|total amount|amount charged|total for this order|total)\s*[:：]?\s*(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d{1,2})?)/i);
   return match ? '₹' + match[1].replace(/,/g, '') : null;
 }
 
 const normalizeText = (value: string): string =>
   value.replace(/&nbsp;|&#160;/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
-    .replace(/\\u00a0/g, ' ').replace(/[\\u200e\\u200f\\u202a-\\u202e]/g, '')
-    .replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim();
+    .replace(/\u00a0/g, ' ').replace(/[\u200e\u200f\u202a-\u202e]/g, '')
+    .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
 const money = (value: string): string | null => {
-  const match = value.match(/(?:₹|Rs\\.?|INR)\\s*([\\d,]+(?:\\.\\d{1,2})?)/i);
+  const match = value.match(/(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d{1,2})?)/i);
   return match ? '₹' + match[1].replace(/,/g, '') : null;
 };
 
@@ -52,7 +52,7 @@ export function extractAmazonEmail(html: string, plainText = ''): AmazonEmailExt
 
   // Amazon groups each order's address, order number and item rows in a table body.
   // Work per tbody so one digest email can correctly yield several independent orders.
-  const blocks = html.match(/<tbody\\b[^>]*>[\\s\\S]*?<\\/tbody>/gi) || [];
+  const blocks = html.match(/<tbody\b[^>]*>[\s\S]*?<\/tbody>/gi) || [];
   const orders: AmazonOrderExtraction[] = [];
   for (const block of blocks) {
     const orderId = extractAmazonOrderId(normalizeText(block));
@@ -61,27 +61,27 @@ export function extractAmazonEmail(html: string, plainText = ''): AmazonEmailExt
     const urls: string[] = [];
     const images: string[] = [];
 
-    const imageTags = block.match(/<img\\b[^>]*>/gi) || [];
+    const imageTags = block.match(/<img\b[^>]*>/gi) || [];
     for (const tag of imageTags) {
-      const alt = tag.match(/\\balt=["']([^"']+)["']/i)?.[1] || '';
-      const src = tag.match(/\\b(?:src|data-src)=["']([^"']+)["']/i)?.[1] || '';
+      const alt = tag.match(/\balt=["']([^"']+)["']/i)?.[1] || '';
+      const src = tag.match(/\b(?:src|data-src)=["']([^"']+)["']/i)?.[1] || '';
       const name = normalizeText(alt);
       if (name.length >= 8 && !/^(amazon|your order|view order)$/i.test(name)) names.push(name);
-      if (/^https?:\\/\\//i.test(src)) images.push(src);
+      if (/^https?:\/\//i.test(src)) images.push(src);
     }
 
-    const anchors = block.match(/<a\\b[^>]*href=["'][^"']+["'][^>]*>/gi) || [];
+    const anchors = block.match(/<a\b[^>]*href=["'][^"']+["'][^>]*>/gi) || [];
     for (const tag of anchors) {
       const href = tag.match(/href=["']([^"']+)["']/i)?.[1] || '';
       const target = decodeRedirect(href);
-      if (/^https?:\\/\\//i.test(target) && /\\/(?:dp|gp\\/product)\\/[A-Z0-9]{10}/i.test(target)) urls.push(target);
+      if (/^https?:\/\//i.test(target) && /\/(?:dp|gp\/product)\/[A-Z0-9]{10}/i.test(target)) urls.push(target);
     }
 
     const visible = normalizeText(block);
     const itemTotal = money(visible);
-    const textBlock = plainText.split(/Order\\s*#\\s*/i).find(part => part.includes(orderId)) || '';
+    const textBlock = plainText.split(/Order\s*#\s*/i).find(part => part.includes(orderId)) || '';
     const followingText = textBlock.slice(textBlock.indexOf(orderId) + orderId.length);
-    const totalMatch = followingText.match(/[\\s\\S]*?\\bTotal\\s*(?:₹|Rs\\.?|INR)?\\s*([\\d,]+(?:\\.\\d{1,2})?)\\s*INR?/i);
+    const totalMatch = followingText.match(/[\s\S]*?\bTotal\s*(?:₹|Rs\.?|INR)?\s*([\d,]+(?:\.\d{1,2})?)\s*INR?/i);
     const orderTotal = totalMatch ? '₹' + totalMatch[1].replace(/,/g, '') : null;
 
     orders.push({
